@@ -71,5 +71,21 @@ object SampleData {
             "Lexi",
             "Have you tried writing build.gradle with KTS?"
         ),
+        Message(
+            "Lexi",
+            "I didn't know you can now run the emulator directly from Android Studio"
+        ),
+        Message(
+            "Lexi",
+            "Compose Previews are great to check quickly how a composable layout looks like"
+        ),
+        Message(
+            "Lexi",
+            "Previews are also interactive after enabling the experimental setting"
+        ),
+        Message(
+            "Lexi",
+            "Have you tried writing build.gradle with KTS?"
+        ),
     )
 }
