@@ -46,7 +46,7 @@ fun HomeScreen(modifier: Modifier, onclick: () -> Unit){
         topBar = {
             NavBar(onClick = onclick, modifier = modifier, destination = Profile)
         }
-    ){innerPadding ->  Surface(modifier = Modifier.padding(innerPadding)) {
+    ){innerPadding ->  Surface(modifier = Modifier.padding(innerPadding), color = MaterialTheme.colorScheme.background) {
         Conversation(messages = SampleData.conversationSample)
     }}
 
