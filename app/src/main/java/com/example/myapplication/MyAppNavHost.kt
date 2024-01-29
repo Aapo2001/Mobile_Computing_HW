@@ -11,7 +11,8 @@ import androidx.navigation.compose.composable
 
 @Composable
 fun MyAppNavHost(    navController: NavHostController,
-                     modifier: Modifier = Modifier
+                     modifier: Modifier = Modifier,
+                     imageSaver: ImageSaver
 ){
     NavHost(
         navController = navController,
@@ -21,7 +22,7 @@ fun MyAppNavHost(    navController: NavHostController,
         composable(Home.route) {
             HomeScreen(modifier, onclick = {navController.navigateSingleTopTo(Profile.route)}) }
         composable(Profile.route){
-            ProfileScreen(modifier, onclick = {navController.navigateSingleTopTo(Home.route)})
+            ProfileScreen(modifier, onclick = {navController.navigateSingleTopTo(Home.route)}, imageSaver)
         }
 
     }

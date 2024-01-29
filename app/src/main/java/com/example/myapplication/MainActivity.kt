@@ -14,6 +14,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.navigation.compose.rememberNavController
 import com.example.myapplication.ui.theme.MyApplicationTheme
@@ -33,9 +34,12 @@ class MainActivity : ComponentActivity() {
 fun MyApp(){
     MyApplicationTheme {
         val navController = rememberNavController()
+        val context = LocalContext.current
+        val imageSaver = ImageSaver(context = context, context.contentResolver)
         MyAppNavHost(
             navController = navController,
-            modifier = Modifier
+            modifier = Modifier,
+            imageSaver = imageSaver
         )
     }
 }
