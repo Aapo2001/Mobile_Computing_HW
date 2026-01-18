@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -55,7 +56,10 @@ object Profile : Destination{
     override val icon = Icons.Default.Person
     override val route = "profile"
 }
-
+object EditProfile : Destination{
+    override val icon = Icons.Default.Edit
+    override val route = "edit_profile"
+}
 object Home : Destination{
     override val icon = Icons.Default.ArrowBack
     override val route = "home"

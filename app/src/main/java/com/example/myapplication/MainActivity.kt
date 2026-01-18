@@ -17,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.navigation.compose.rememberNavController
+import com.example.myapplication.repository.UserProfileRepository
 import com.example.myapplication.ui.theme.MyApplicationTheme
 
 
@@ -35,11 +36,11 @@ fun MyApp(){
     MyApplicationTheme {
         val navController = rememberNavController()
         val context = LocalContext.current
-        val imageSaver = ImageSaver(context = context, context.contentResolver)
+        val repository = UserProfileRepository(context)
         MyAppNavHost(
             navController = navController,
             modifier = Modifier,
-            imageSaver = imageSaver
+            repository = repository
         )
     }
 }

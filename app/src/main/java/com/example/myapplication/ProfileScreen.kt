@@ -1,88 +1,122 @@
 package com.example.myapplication
 
-import android.content.Intent
-import android.net.Uri
-import android.util.Log
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.padding
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.PickVisualMediaRequest
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Icon
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
+import com.example.myapplication.repository.UserProfileRepository
 import kotlinx.coroutines.launch
 import java.io.File
-
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ProfileScreen(modifier: Modifier, onclick: () -> Unit, imageSaver: ImageSaver){
+fun ProfileScreen(modifier: Modifier, onclick: () -> Unit,onNavigateToEdit: () -> Unit, repository: UserProfileRepository){
     val context = LocalContext.current
-    val coroutineScope = rememberCoroutineScope()
-    val flag = Intent.FLAG_GRANT_READ_URI_PERMISSION
-    var imageUri by remember{ mutableStateOf<Uri?>(null)}
+    val userProfile by repository.userProfile.collectAsState(initial = null)
 
-    val pickMedia = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        // Callback is invoked after the user selects a media item or closes the
-        // photo picker.
-        if (uri != null) {
-            Log.d("PhotoPicker", "Selected URI: $uri")
-            context.contentResolver.takePersistableUriPermission(uri, flag)
-            imageUri = uri
-
-        } else {
-            Log.d("PhotoPicker", "No media selected")
-        }
-    }
     Scaffold(
         topBar = {
             NavBar(onClick = onclick, modifier = modifier, destination = Home)
         }
-    ){innerPadding ->  Surface(modifier = Modifier.padding(innerPadding)) {
-        Text(text = "Profile")
+    ) { paddingValues ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+                .padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Spacer(modifier = Modifier.height(32.dp))
 
-        Row {
-            TextButton(onClick = {
+            Text(
+                text = "Your Profile",
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold
+            )
 
-                coroutineScope.launch {
-                    pickMedia.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-                    imageUri?.let { imageSaver.saveFromUri(it) }
+            Spacer(modifier = Modifier.height(16.dp))
 
+            // Profile image
+            Box(
+                modifier = Modifier
+                    .size(200.dp)
+                    .clip(CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                if (userProfile?.imagePath?.isNotEmpty() == true) {
+                    AsyncImage(
+                        model = ImageRequest.Builder(context)
+                            .data(File(userProfile!!.imagePath))
+                            .crossfade(true)
+                            .build(),
+                        contentDescription = "Profile picture",
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                } else {
+                    Surface(
+                        color = MaterialTheme.colorScheme.secondaryContainer,
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Person,
+                            contentDescription = "Default avatar",
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(48.dp),
+                            tint = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                    }
                 }
-            }) {
-                Icon(
-                    Icons.Filled.Add, null)
-                Spacer(modifier.size(ButtonDefaults.IconSpacing))
-                Text("Add photo")
             }
 
-            AsyncImage(modifier = Modifier.fillMaxWidth().height(240.dp).clip(RoundedCornerShape(8.dp)), model = imageUri, contentDescription = null)
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // Username display
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant
+                )
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = "Username",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = userProfile?.username ?: "No username set",
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.weight(1f))
+
+            Button(
+                onClick = onNavigateToEdit,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Edit Profile")
+            }
         }
     }
-    }
-
-
-
 }
-
 

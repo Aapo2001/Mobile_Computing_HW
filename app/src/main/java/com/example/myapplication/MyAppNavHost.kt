@@ -6,13 +6,13 @@ import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
-
+import com.example.myapplication.repository.UserProfileRepository
 
 
 @Composable
 fun MyAppNavHost(    navController: NavHostController,
                      modifier: Modifier = Modifier,
-                     imageSaver: ImageSaver
+                     repository: UserProfileRepository
 ){
     NavHost(
         navController = navController,
@@ -22,9 +22,32 @@ fun MyAppNavHost(    navController: NavHostController,
         composable(Home.route) {
             HomeScreen(modifier, onclick = {navController.navigateSingleTopTo(Profile.route)}) }
         composable(Profile.route){
-            ProfileScreen(modifier, onclick = {navController.navigateSingleTopTo(Home.route)}, imageSaver)
+            ProfileScreen(modifier, onclick = {navController.navigateSingleTopTo(Home.route)},  onNavigateToEdit = {
+                navController.navigate(EditProfile.route) {
+                    popUpTo(Profile.route) {
+                        inclusive = false
+                        saveState = true
+                    }
+                    launchSingleTop = true
+                    restoreState = true
+                }
+            },repository)
         }
-
+        composable(EditProfile.route){
+            ProfileInputView(
+                onNavigateToDisplay = {
+                    navController.navigate(Profile.route) {
+                        popUpTo(Profile.route) {
+                            inclusive = false
+                            saveState = true
+                        }
+                        launchSingleTop = true
+                        restoreState = true
+                    }
+                },
+                repository = repository
+            )
+        }
     }
 }
 
