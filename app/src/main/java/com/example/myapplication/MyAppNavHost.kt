@@ -20,18 +20,17 @@ fun MyAppNavHost(    navController: NavHostController,
         modifier = modifier
     ) {
         composable(Home.route) {
-            HomeScreen(modifier, onclick = {navController.navigateSingleTopTo(Profile.route)}) }
+            HomeScreen(modifier, onclick = {navController.navigateSingleTopTo(Profile.route, Home.route)}) }
         composable(Profile.route){
-            ProfileScreen(modifier, onclick = {navController.navigateSingleTopTo(Home.route)},  onNavigateToEdit = {
+            ProfileScreen(modifier, onclick = {navController.navigateSingleTopTo(Home.route, Home.route)},  onNavigateToEdit = {
                 navController.navigate(EditProfile.route) {
                     popUpTo(Profile.route) {
                         inclusive = false
-                        saveState = true
                     }
                     launchSingleTop = true
-                    restoreState = true
                 }
-            },repository)
+            },
+               repository =  repository)
         }
         composable(EditProfile.route){
             ProfileInputView(
@@ -39,10 +38,8 @@ fun MyAppNavHost(    navController: NavHostController,
                     navController.navigate(Profile.route) {
                         popUpTo(Profile.route) {
                             inclusive = false
-                            saveState = true
                         }
                         launchSingleTop = true
-                        restoreState = true
                     }
                 },
                 repository = repository
@@ -51,10 +48,10 @@ fun MyAppNavHost(    navController: NavHostController,
     }
 }
 
-fun NavHostController.navigateSingleTopTo(route: String) =
+fun NavHostController.navigateSingleTopTo(route: String, popUpToRoute: String) =
     this.navigate(route) {
         popUpTo(
-            this@navigateSingleTopTo.graph.findStartDestination().id
+            popUpToRoute
         ) {
             inclusive = false
             saveState = true
