@@ -29,7 +29,7 @@ import java.io.File
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProfileInputView(
-    onNavigateToDisplay: () -> Unit,
+    onclick: () -> Unit,
     repository: UserProfileRepository
 ) {
     val context = LocalContext.current
@@ -165,7 +165,7 @@ fun ProfileInputView(
                 onClick = {
                     scope.launch {
                         repository.updateProfile(username, selectedImageUri)
-                        onNavigateToDisplay()
+                        onclick()
                     }
                 },
                 modifier = Modifier.fillMaxWidth(),
@@ -176,7 +176,7 @@ fun ProfileInputView(
 
             // Navigate without saving
             OutlinedButton(
-                onClick = onNavigateToDisplay,
+                onClick = onclick,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text("View Profile Without Saving")

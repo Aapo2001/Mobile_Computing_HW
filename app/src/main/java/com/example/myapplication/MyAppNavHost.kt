@@ -20,27 +20,16 @@ fun MyAppNavHost(    navController: NavHostController,
         modifier = modifier
     ) {
         composable(Home.route) {
-            HomeScreen(modifier, onclick = {navController.navigateSingleTopTo(Profile.route, Home.route)}) }
+            HomeScreen(modifier, onclick = {navController.navigateSingleTopTo(Profile.route)}) }
         composable(Profile.route){
-            ProfileScreen(modifier, onclick = {navController.navigateSingleTopTo(Home.route, Home.route)},  onNavigateToEdit = {
-                navController.navigate(EditProfile.route) {
-                    popUpTo(Profile.route) {
-                        inclusive = false
-                    }
-                    launchSingleTop = true
-                }
-            },
-               repository =  repository)
+            ProfileScreen(modifier, onclick = {navController.navigateSingleTopTo(Home.route)},  onNavigateToEdit = {
+                navController.navigateSingleTopTo(EditProfile.route, Profile.route)
+            },repository)
         }
         composable(EditProfile.route){
             ProfileInputView(
-                onNavigateToDisplay = {
-                    navController.navigate(Profile.route) {
-                        popUpTo(Profile.route) {
-                            inclusive = false
-                        }
-                        launchSingleTop = true
-                    }
+                onclick = {
+                    navController.navigateSingleTopTo(Profile.route, Profile.route)
                 },
                 repository = repository
             )
@@ -48,14 +37,12 @@ fun MyAppNavHost(    navController: NavHostController,
     }
 }
 
-fun NavHostController.navigateSingleTopTo(route: String, popUpToRoute: String) =
+fun NavHostController.navigateSingleTopTo(route: String, popUpToRoute: String? = null) =
     this.navigate(route) {
         popUpTo(
-            popUpToRoute
+               popUpToRoute ?: Home.route
         ) {
             inclusive = false
-            saveState = true
         }
         launchSingleTop = true
-        restoreState = true
     }
