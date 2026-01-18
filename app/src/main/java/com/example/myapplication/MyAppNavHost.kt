@@ -33,6 +33,7 @@ fun NavHostController.navigateSingleTopTo(route: String) =
         popUpTo(
             this@navigateSingleTopTo.graph.findStartDestination().id
         ) {
+            inclusive = false
             saveState = true
         }
         launchSingleTop = true
