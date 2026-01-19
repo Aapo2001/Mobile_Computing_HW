@@ -17,9 +17,14 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Map
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Sensors
+import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -61,8 +66,28 @@ object EditProfile : Destination{
     override val route = "edit_profile"
 }
 object Home : Destination{
-    override val icon = Icons.Default.ArrowBack
+    override val icon = Icons.AutoMirrored.Filled.ArrowBack
     override val route = "home"
+}
+object SensorDest : Destination{
+    override val icon = Icons.Default.Sensors
+    override val route = "sensor"
+}
+object MapDest : Destination{
+    override val icon = Icons.Default.Map
+    override val route = "map"
+}
+object VideoDest : Destination{
+    override val icon = Icons.Default.VideoLibrary
+    override val route = "video"
+}
+object CameraDest : Destination{
+    override val icon = Icons.Default.CameraAlt
+    override val route = "camera"
+}
+object AudioDest : Destination{
+    override val icon = Icons.Default.Mic
+    override val route = "audio"
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
