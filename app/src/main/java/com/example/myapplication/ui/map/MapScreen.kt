@@ -1,8 +1,7 @@
-package com.example.myapplication
+package com.example.myapplication.ui.map
 
 import android.Manifest
 import android.annotation.SuppressLint
-import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -20,30 +19,30 @@ import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FabPosition
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.core.content.ContextCompat
-import com.google.android.gms.location.LocationServices
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavController
+import androidx.navigation.NavDestination
+import com.example.myapplication.navigation.BottomNavBar
+import com.example.myapplication.navigation.MapDest
+import com.example.myapplication.navigation.NavBar
 import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
 import com.google.maps.android.compose.GoogleMap
-import com.google.maps.android.compose.MapProperties
-import com.google.maps.android.compose.MapType
 import com.google.maps.android.compose.MapUiSettings
 import com.google.maps.android.compose.Marker
 import com.google.maps.android.compose.MarkerState
@@ -53,22 +52,16 @@ import com.google.maps.android.compose.rememberCameraPositionState
 @Composable
 fun MapScreen(
     modifier: Modifier = Modifier,
-    onclick: () -> Unit
+    navController: NavController,
+    currentDestination: NavDestination?
 ) {
     val context = LocalContext.current
 
-    // Permission state
-    var hasLocationPermission by remember {
-        mutableStateOf(
-            ContextCompat.checkSelfPermission(
-                context,
-                Manifest.permission.ACCESS_FINE_LOCATION
-            ) == PackageManager.PERMISSION_GRANTED
-        )
-    }
+    val viewModel: MapViewModel = viewModel(
+        factory = MapViewModel.provideFactory(context)
+    )
 
-    // Current location state
-    var currentLocation by remember { mutableStateOf<LatLng?>(null) }
+    val uiState by viewModel.uiState.collectAsState()
 
     // Default location (Helsinki, Finland)
     val defaultLocation = LatLng(60.1699, 24.9384)
@@ -78,94 +71,59 @@ fun MapScreen(
         position = CameraPosition.fromLatLngZoom(defaultLocation, 12f)
     }
 
-    // Map properties
-    var mapProperties by remember {
-        mutableStateOf(
-            MapProperties(
-                isMyLocationEnabled = hasLocationPermission,
-                mapType = MapType.NORMAL
-            )
-        )
-    }
-
     // Map UI settings
-    val mapUiSettings by remember {
-        mutableStateOf(
-            MapUiSettings(
-                zoomControlsEnabled = true,
-                myLocationButtonEnabled = false // We'll use our own button
-            )
-        )
-    }
+    val mapUiSettings = MapUiSettings(
+        zoomControlsEnabled = true,
+        myLocationButtonEnabled = false // We'll use our own button
+    )
 
     // Permission launcher
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
-        hasLocationPermission = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
-                permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
-        mapProperties = mapProperties.copy(isMyLocationEnabled = hasLocationPermission)
+        val fineGranted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true
+        val coarseGranted = permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+        viewModel.onPermissionResult(fineGranted, coarseGranted)
     }
-
-    // Get current location when permission is granted
-    LaunchedEffect(hasLocationPermission) {
-        if (hasLocationPermission) {
-            val fusedLocationClient = LocationServices.getFusedLocationProviderClient(context)
-            fusedLocationClient.lastLocation.addOnSuccessListener { location ->
-                location?.let {
-                    currentLocation = LatLng(it.latitude, it.longitude)
-                }
-            }
-        }
-    }
-
-    // Markers state - clicked locations
-    var markers by remember { mutableStateOf(listOf<LatLng>()) }
 
     Scaffold(
+        modifier = modifier.fillMaxSize(),
         topBar = {
-            NavBar(
-                onClick = onclick,
-                destination = Home
+            NavBar(title = MapDest.label)
+        },
+        bottomBar = {
+            BottomNavBar(
+                navController = navController,
+                currentDestination = currentDestination
             )
         },
         floatingActionButton = {
-            if (hasLocationPermission && currentLocation != null) {
-                FloatingActionButton(
-                    onClick = {
-                        currentLocation?.let { location ->
-                            cameraPositionState.move(
-                                CameraUpdateFactory.newLatLngZoom(location, 15f)
-                            )
-                        }
+            FloatingActionButton(
+                onClick = {
+                    uiState.currentLocation?.let { location ->
+                        cameraPositionState.move(
+                            CameraUpdateFactory.newLatLngZoom(location, 15f)
+                        )
                     }
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.MyLocation,
-                        contentDescription = "My Location"
-                    )
                 }
+            ) {
+                Icon(
+                    imageVector = Icons.Default.MyLocation,
+                    contentDescription = "My Location"
+                )
             }
-        }
+        },
+        floatingActionButtonPosition = FabPosition.Start
     ) { paddingValues ->
         Column(
-            modifier = modifier
-                .fillMaxSize()
+            modifier = Modifier
                 .padding(paddingValues)
         ) {
-            // Title
-            Text(
-                text = "Maps & Location",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(16.dp)
-            )
-
             // Permission Card
-            if (!hasLocationPermission) {
+            if (!uiState.hasLocationPermission) {
                 Card(
                     modifier = Modifier
-                        .fillMaxWidth()
+                        .fillMaxSize()
                         .padding(horizontal = 16.dp),
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.errorContainer
@@ -212,7 +170,7 @@ fun MapScreen(
             }
 
             // Location info card (context-aware)
-            if (hasLocationPermission && currentLocation != null) {
+            if (uiState.hasLocationPermission && uiState.currentLocation != null) {
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -227,7 +185,7 @@ fun MapScreen(
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold
                         )
-                        currentLocation?.let { loc ->
+                        uiState.currentLocation?.let { loc ->
                             Text(
                                 text = "Lat: %.4f, Lng: %.4f".format(loc.latitude, loc.longitude),
                                 style = MaterialTheme.typography.bodySmall
@@ -247,20 +205,18 @@ fun MapScreen(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(horizontal = 16.dp)
-                    .padding(bottom = 16.dp)
             ) {
                 GoogleMap(
                     modifier = Modifier.fillMaxSize(),
                     cameraPositionState = cameraPositionState,
-                    properties = mapProperties,
+                    properties = uiState.mapProperties,
                     uiSettings = mapUiSettings,
                     onMapClick = { latLng ->
-                        markers = markers + latLng
+                        viewModel.addMarker(latLng)
                     }
                 ) {
                     // User-added markers
-                    markers.forEachIndexed { index, position ->
+                    uiState.markers.forEachIndexed { index, position ->
                         Marker(
                             state = MarkerState(position = position),
                             title = "Marker ${index + 1}",
@@ -269,7 +225,7 @@ fun MapScreen(
                     }
 
                     // Current location marker (if available)
-                    currentLocation?.let { location ->
+                    uiState.currentLocation?.let { location ->
                         Marker(
                             state = MarkerState(position = location),
                             title = "You are here",

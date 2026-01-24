@@ -9,6 +9,7 @@ import android.hardware.SensorManager
 import android.os.Binder
 import android.os.Build
 import android.os.IBinder
+import androidx.annotation.RequiresApi
 import com.example.myapplication.notification.NotificationHelper
 import kotlin.math.sqrt
 
@@ -50,18 +51,15 @@ class SensorService : Service(), SensorEventListener {
         }
     }
 
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         // Start as foreground service
         val notification = notificationHelper.createServiceNotification()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(
-                NotificationHelper.SERVICE_NOTIFICATION_ID,
-                notification,
-                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
-            )
-        } else {
-            startForeground(NotificationHelper.SERVICE_NOTIFICATION_ID, notification)
-        }
+        startForeground(
+            NotificationHelper.SERVICE_NOTIFICATION_ID,
+            notification,
+            android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+        )
 
         // Register sensor listener
         registerSensorListener()

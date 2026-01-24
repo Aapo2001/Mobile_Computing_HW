@@ -1,6 +1,5 @@
-package com.example.myapplication
+package com.example.myapplication.ui.video
 
-import android.net.Uri
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -16,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -27,99 +27,62 @@ import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ElevatedCard
+import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableLongStateOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.media3.common.MediaItem
-import androidx.media3.common.Player
-import androidx.media3.common.util.UnstableApi
-import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.ui.PlayerView
-import kotlinx.coroutines.delay
 import androidx.core.net.toUri
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.ui.PlayerView
+import androidx.navigation.NavController
+import androidx.navigation.NavDestination
+import com.example.myapplication.navigation.BottomNavBar
+import com.example.myapplication.navigation.NavBar
+import com.example.myapplication.navigation.VideoDest
 
 @OptIn(UnstableApi::class)
 @Composable
 fun VideoScreen(
     modifier: Modifier = Modifier,
-    onclick: () -> Unit
+    navController: NavController,
+    currentDestination: NavDestination?
 ) {
     val context = LocalContext.current
 
-    // Video URI state
-    var videoUri by remember { mutableStateOf<Uri?>(null) }
+    val viewModel: VideoViewModel = viewModel(
+        factory = VideoViewModel.provideFactory(context)
+    )
 
-    // Player state
-    var isPlaying by remember { mutableStateOf(false) }
-    var currentPosition by remember { mutableLongStateOf(0L) }
-    var duration by remember { mutableLongStateOf(0L) }
-    var sliderPosition by remember { mutableFloatStateOf(0f) }
-    var isSeeking by remember { mutableStateOf(false) }
-
-    // ExoPlayer instance
-    val exoPlayer = remember {
-        ExoPlayer.Builder(context).build().apply {
-            addListener(object : Player.Listener {
-                override fun onPlaybackStateChanged(playbackState: Int) {
-                    if (playbackState == Player.STATE_READY) {
-                        duration = this@apply.duration
-                    }
-                }
-
-                override fun onIsPlayingChanged(playing: Boolean) {
-                    isPlaying = playing
-                }
-            })
-        }
-    }
+    val uiState by viewModel.uiState.collectAsState()
 
     // Video picker launcher
     val videoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
-    ) { uri: Uri? ->
-        uri?.let {
-            videoUri = it
-            exoPlayer.setMediaItem(MediaItem.fromUri(it))
-            exoPlayer.prepare()
-        }
-    }
-
-    // Update position periodically
-    LaunchedEffect(isPlaying) {
-        while (isPlaying) {
-            if (!isSeeking) {
-                currentPosition = exoPlayer.currentPosition
-                if (duration > 0) {
-                    sliderPosition = currentPosition.toFloat() / duration.toFloat()
-                }
-            }
-            delay(100)
-        }
+    ) { uri ->
+        uri?.let { viewModel.selectVideo(it) }
     }
 
     // Cleanup
     DisposableEffect(Unit) {
         onDispose {
-            exoPlayer.release()
+            // ViewModel handles cleanup in onCleared
         }
     }
 
@@ -131,15 +94,19 @@ fun VideoScreen(
     )
 
     Scaffold(
+        modifier = modifier,
         topBar = {
-            NavBar(
-                onClick = onclick,
-                destination = Home
+            NavBar(title = VideoDest.label)
+        },
+        bottomBar = {
+            BottomNavBar(
+                navController = navController,
+                currentDestination = currentDestination
             )
         }
     ) { paddingValues ->
         Column(
-            modifier = modifier
+            modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
                 .padding(16.dp)
@@ -147,13 +114,6 @@ fun VideoScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // Title
-            Text(
-                text = "Video Playback",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold
-            )
-
             // Video Player Card
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -172,11 +132,11 @@ fun VideoScreen(
                             .aspectRatio(16f / 9f),
                         contentAlignment = Alignment.Center
                     ) {
-                        if (videoUri != null || exoPlayer.mediaItemCount > 0) {
+                        if (uiState.videoUri != null || viewModel.exoPlayer.mediaItemCount > 0) {
                             AndroidView(
                                 factory = { ctx ->
                                     PlayerView(ctx).apply {
-                                        player = exoPlayer
+                                        player = viewModel.exoPlayer
                                         useController = false
                                         layoutParams = FrameLayout.LayoutParams(
                                             ViewGroup.LayoutParams.MATCH_PARENT,
@@ -209,18 +169,12 @@ fun VideoScreen(
                     Spacer(modifier = Modifier.height(8.dp))
 
                     // Progress Slider
-                    if (duration > 0) {
+                    if (uiState.duration > 0) {
                         Column(modifier = Modifier.fillMaxWidth()) {
                             Slider(
-                                value = sliderPosition,
-                                onValueChange = { value ->
-                                    isSeeking = true
-                                    sliderPosition = value
-                                },
-                                onValueChangeFinished = {
-                                    exoPlayer.seekTo((sliderPosition * duration).toLong())
-                                    isSeeking = false
-                                },
+                                value = uiState.sliderPosition,
+                                onValueChange = { viewModel.onSliderValueChange(it) },
+                                onValueChangeFinished = { viewModel.onSliderValueChangeFinished() },
                                 modifier = Modifier.fillMaxWidth()
                             )
                             Row(
@@ -228,46 +182,40 @@ fun VideoScreen(
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
                                 Text(
-                                    text = formatTime(currentPosition),
+                                    text = formatTime(uiState.currentPosition),
                                     style = MaterialTheme.typography.bodySmall
                                 )
                                 Text(
-                                    text = formatTime(duration),
+                                    text = formatTime(uiState.duration),
                                     style = MaterialTheme.typography.bodySmall
                                 )
                             }
                         }
                     }
 
-                    // Playback Controls
+                    // Playback Controls - M3 styled
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.Center,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        IconButton(
-                            onClick = {
-                                if (isPlaying) {
-                                    exoPlayer.pause()
-                                } else {
-                                    exoPlayer.play()
-                                }
-                            },
-                            enabled = videoUri != null || exoPlayer.mediaItemCount > 0
+                        FilledIconButton(
+                            onClick = { viewModel.togglePlayPause() },
+                            enabled = uiState.videoUri != null || viewModel.exoPlayer.mediaItemCount > 0,
+                            colors = IconButtonDefaults.filledIconButtonColors(
+                                containerColor = MaterialTheme.colorScheme.primary,
+                                contentColor = MaterialTheme.colorScheme.onPrimary
+                            )
                         ) {
                             Icon(
-                                imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                                contentDescription = if (isPlaying) "Pause" else "Play"
+                                imageVector = if (uiState.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                contentDescription = if (uiState.isPlaying) "Pause" else "Play"
                             )
                         }
+                        Spacer(modifier = Modifier.width(12.dp))
                         IconButton(
-                            onClick = {
-                                exoPlayer.stop()
-                                exoPlayer.seekTo(0)
-                                currentPosition = 0
-                                sliderPosition = 0f
-                            },
-                            enabled = videoUri != null || exoPlayer.mediaItemCount > 0
+                            onClick = { viewModel.stop() },
+                            enabled = uiState.videoUri != null || viewModel.exoPlayer.mediaItemCount > 0
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Stop,
@@ -290,12 +238,10 @@ fun VideoScreen(
                 Text(" Select Video from Device", modifier = Modifier.padding(start = 8.dp))
             }
 
-            // Sample Videos Card
-            Card(
+            // Sample Videos Card - M3 ElevatedCard
+            ElevatedCard(
                 modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.secondaryContainer
-                )
+                elevation = CardDefaults.elevatedCardElevation(defaultElevation = 2.dp)
             ) {
                 Column(
                     modifier = Modifier.padding(16.dp),
@@ -304,17 +250,14 @@ fun VideoScreen(
                     Text(
                         text = "Sample Videos (Online)",
                         style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                     sampleVideos.forEach { (name, url) ->
-                        OutlinedButton(
-                            onClick = {
-                                videoUri = url.toUri()
-                                exoPlayer.setMediaItem(MediaItem.fromUri(url))
-                                exoPlayer.prepare()
-                                exoPlayer.play()
-                            },
-                            modifier = Modifier.fillMaxWidth()
+                        FilledTonalButton(
+                            onClick = { viewModel.selectAndPlayVideo(url.toUri()) },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = MaterialTheme.shapes.medium
                         ) {
                             Text(name)
                         }
