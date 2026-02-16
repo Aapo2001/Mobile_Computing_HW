@@ -49,9 +49,6 @@ fun NavBar(
                 }
             }
         },
-        modifier = modifier.padding(top = 18.dp
-
-        ),
         scrollBehavior = scrollBehavior
     )
 }

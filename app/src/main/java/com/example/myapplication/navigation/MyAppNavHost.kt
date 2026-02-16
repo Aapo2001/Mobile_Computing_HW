@@ -7,14 +7,10 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
-import com.example.myapplication.ui.audio.AudioScreen
-import com.example.myapplication.ui.camera.CameraScreen
 import com.example.myapplication.ui.home.HomeScreen
-import com.example.myapplication.ui.map.MapScreen
 import com.example.myapplication.ui.profile.ProfileInputView
 import com.example.myapplication.ui.profile.ProfileScreen
 import com.example.myapplication.ui.sensor.SensorScreen
-import com.example.myapplication.ui.video.VideoScreen
 import com.example.myapplication.repository.MessageRepository
 import com.example.myapplication.repository.UserProfileRepository
 
@@ -47,7 +43,7 @@ fun MyAppNavHost(
         }
         composable(Profile.route) {
             ProfileScreen(
-                onclick = { navController.navigateSingleTopTo(Home.route) },
+                onNavigateBack = { navController.navigateSingleTopTo(Home.route) },
                 onNavigateToEdit = {
                     navController.navigateSingleTopTo(
                         EditProfile.route,
@@ -70,30 +66,6 @@ fun MyAppNavHost(
         composable(SensorDest.route) {
             SensorScreen(
                 initialShakeCount = initialShakeCount,
-                navController = navController,
-                currentDestination = currentDestination
-            )
-        }
-        composable(MapDest.route) {
-            MapScreen(
-                navController = navController,
-                currentDestination = currentDestination
-            )
-        }
-        composable(VideoDest.route) {
-            VideoScreen(
-                navController = navController,
-                currentDestination = currentDestination
-            )
-        }
-        composable(CameraDest.route) {
-            CameraScreen(
-                navController = navController,
-                currentDestination = currentDestination
-            )
-        }
-        composable(AudioDest.route) {
-            AudioScreen(
                 navController = navController,
                 currentDestination = currentDestination
             )

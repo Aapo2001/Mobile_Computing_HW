@@ -4,7 +4,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.*
@@ -15,11 +14,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import androidx.navigation.NavDestination
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import com.example.myapplication.navigation.BottomNavBar
 import com.example.myapplication.navigation.NavBar
 import com.example.myapplication.navigation.Profile
@@ -28,20 +27,14 @@ import java.io.File
 
 @Composable
 fun ProfileScreen(
-    onclick: () -> Unit,
+    onNavigateBack: () -> Unit,
     onNavigateToEdit: () -> Unit,
     repository: UserProfileRepository,
     navController: NavController,
     currentDestination: NavDestination?
 ) {
     val context = LocalContext.current
-
-    val viewModel: ProfileViewModel = viewModel(
-        factory = ProfileViewModel.provideFactory(repository)
-    )
-
-    val uiState by viewModel.uiState.collectAsState()
-    val userProfile = uiState.userProfile
+    val userProfile by repository.userProfile.collectAsState(initial = null)
 
     Scaffold(
         topBar = {
@@ -49,7 +42,7 @@ fun ProfileScreen(
                 title = Profile.label,
                 navigationIcon = Icons.AutoMirrored.Filled.ArrowBack,
                 navigationIconDescription = "Go back",
-                onClick = onclick
+                onClick = onNavigateBack
             )
         },
         bottomBar = {
@@ -68,7 +61,6 @@ fun ProfileScreen(
         ) {
             Spacer(modifier = Modifier.height(32.dp))
 
-            // Profile header
             Text(
                 text = "Your Profile",
                 style = MaterialTheme.typography.headlineMedium,
@@ -77,7 +69,6 @@ fun ProfileScreen(
 
             Spacer(modifier = Modifier.height(32.dp))
 
-            // Profile image with M3 styling
             Surface(
                 modifier = Modifier
                     .size(180.dp)
@@ -93,7 +84,7 @@ fun ProfileScreen(
                 if (userProfile?.imagePath?.isNotEmpty() == true) {
                     AsyncImage(
                         model = ImageRequest.Builder(context)
-                            .data(File(userProfile.imagePath))
+                            .data(File(userProfile!!.imagePath))
                             .crossfade(true)
                             .build(),
                         contentDescription = "Profile picture",
@@ -114,7 +105,6 @@ fun ProfileScreen(
 
             Spacer(modifier = Modifier.height(32.dp))
 
-            // Username display with M3 Card
             ElevatedCard(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.elevatedCardColors(
@@ -146,7 +136,6 @@ fun ProfileScreen(
 
             Spacer(modifier = Modifier.height(32.dp))
 
-            // M3 FilledTonalButton for edit action
             FilledTonalButton(
                 onClick = onNavigateToEdit,
                 modifier = Modifier
@@ -165,7 +154,6 @@ fun ProfileScreen(
                     style = MaterialTheme.typography.labelLarge
                 )
             }
-
         }
     }
 }

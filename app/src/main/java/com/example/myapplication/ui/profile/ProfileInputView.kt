@@ -1,5 +1,6 @@
 package com.example.myapplication.ui.profile
 
+import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -18,13 +19,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import androidx.navigation.NavDestination
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.example.myapplication.navigation.BottomNavBar
 import com.example.myapplication.repository.UserProfileRepository
+import kotlinx.coroutines.launch
 import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -36,18 +37,34 @@ fun ProfileInputView(
     currentDestination: NavDestination?
 ) {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
 
-    val viewModel: ProfileEditViewModel = viewModel(
-        factory = ProfileEditViewModel.provideFactory(repository)
-    )
+    var username by remember { mutableStateOf("") }
+    var selectedImageUri by remember { mutableStateOf<Uri?>(null) }
+    var displayImagePath by remember { mutableStateOf<String?>(null) }
+    var isSaving by remember { mutableStateOf(false) }
+    var profileLoaded by remember { mutableStateOf(false) }
 
-    val uiState by viewModel.uiState.collectAsState()
+    // Load current profile once
+    LaunchedEffect(Unit) {
+        repository.userProfile.collect { profile ->
+            profile?.let {
+                if (!profileLoaded) {
+                    username = it.username
+                    displayImagePath = it.imagePath
+                    profileLoaded = true
+                }
+            }
+        }
+    }
 
-    // Photo picker launcher
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri ->
-        uri?.let { viewModel.selectImage(it) }
+        uri?.let {
+            selectedImageUri = it
+            displayImagePath = null
+        }
     }
 
     Scaffold(
@@ -86,7 +103,6 @@ fun ProfileInputView(
 
             Spacer(modifier = Modifier.height(32.dp))
 
-            // Image preview with M3 styling
             Surface(
                 modifier = Modifier
                     .size(160.dp)
@@ -100,10 +116,10 @@ fun ProfileInputView(
                 tonalElevation = 4.dp
             ) {
                 when {
-                    uiState.selectedImageUri != null -> {
+                    selectedImageUri != null -> {
                         AsyncImage(
                             model = ImageRequest.Builder(context)
-                                .data(uiState.selectedImageUri)
+                                .data(selectedImageUri)
                                 .crossfade(true)
                                 .build(),
                             contentDescription = "Selected profile picture",
@@ -111,10 +127,10 @@ fun ProfileInputView(
                             contentScale = ContentScale.Crop
                         )
                     }
-                    uiState.displayImagePath != null -> {
+                    displayImagePath != null -> {
                         AsyncImage(
                             model = ImageRequest.Builder(context)
-                                .data(File(uiState.displayImagePath!!))
+                                .data(File(displayImagePath!!))
                                 .crossfade(true)
                                 .build(),
                             contentDescription = "Profile picture",
@@ -137,7 +153,6 @@ fun ProfileInputView(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Pick image button - M3 FilledTonalButton
             FilledTonalButton(
                 onClick = {
                     photoPickerLauncher.launch(
@@ -157,10 +172,9 @@ fun ProfileInputView(
 
             Spacer(modifier = Modifier.height(32.dp))
 
-            // Username input with M3 styling
             OutlinedTextField(
-                value = uiState.username,
-                onValueChange = { viewModel.updateUsername(it) },
+                value = username,
+                onValueChange = { username = it },
                 label = { Text("Username") },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
@@ -173,18 +187,22 @@ fun ProfileInputView(
 
             Spacer(modifier = Modifier.weight(1f))
 
-            // Save and navigate button - M3 Filled Button
             Button(
                 onClick = {
-                    viewModel.saveProfile { onclick() }
+                    coroutineScope.launch {
+                        isSaving = true
+                        repository.updateProfile(username, selectedImageUri)
+                        isSaving = false
+                        onclick()
+                    }
                 },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(56.dp),
-                enabled = uiState.username.isNotBlank() && !uiState.isSaving,
+                enabled = username.isNotBlank() && !isSaving,
                 shape = MaterialTheme.shapes.large
             ) {
-                if (uiState.isSaving) {
+                if (isSaving) {
                     CircularProgressIndicator(
                         modifier = Modifier.size(20.dp),
                         strokeWidth = 2.dp,
@@ -206,7 +224,6 @@ fun ProfileInputView(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Navigate without saving - M3 Text Button
             TextButton(
                 onClick = onclick,
                 modifier = Modifier.fillMaxWidth()
@@ -216,7 +233,6 @@ fun ProfileInputView(
                     style = MaterialTheme.typography.labelLarge
                 )
             }
-
         }
     }
 }

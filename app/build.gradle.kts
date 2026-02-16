@@ -19,9 +19,6 @@ android {
         vectorDrawables {
             useSupportLibrary = true
         }
-
-        // Default Maps API key placeholder (replace with your actual key)
-        manifestPlaceholders["MAPS_API_KEY"] = project.findProperty("MAPS_API_KEY") ?: "YOUR_API_KEY_HERE"
     }
 
     buildTypes {
@@ -53,7 +50,6 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
         jniLibs {
-            // Enable 16 KB page size support for Android 15+ compatibility
             useLegacyPackaging = true
         }
     }
@@ -75,9 +71,6 @@ dependencies {
     // Navigation
     implementation("androidx.navigation:navigation-compose:2.7.7")
 
-    // ViewModel
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0")
-
     // Room Database
     val roomVersion = "2.6.1"
     implementation("androidx.room:room-runtime:$roomVersion")
@@ -86,7 +79,6 @@ dependencies {
 
     // Coil for image loading
     implementation("io.coil-kt:coil-compose:2.5.0")
-    implementation("io.coil-kt:coil-video:2.5.0")
 
     // Activity Result API
     implementation("androidx.activity:activity-ktx:1.8.2")
@@ -94,27 +86,9 @@ dependencies {
     // Splash Screen API
     implementation("androidx.core:core-splashscreen:1.0.1")
 
-    // Google Maps
-    implementation("com.google.maps.android:maps-compose:4.3.3")
-    implementation("com.google.android.gms:play-services-maps:18.2.0")
-    implementation("com.google.android.gms:play-services-location:21.2.0")
-
-    // ExoPlayer / Media3 for video playback
-    implementation("androidx.media3:media3-exoplayer:1.3.0")
-    implementation("androidx.media3:media3-ui:1.3.0")
-
-    // CameraX
-    val cameraxVersion = "1.3.2"
-    implementation("androidx.camera:camera-core:$cameraxVersion")
-    implementation("androidx.camera:camera-camera2:$cameraxVersion")
-    implementation("androidx.camera:camera-lifecycle:$cameraxVersion")
-    implementation("androidx.camera:camera-view:$cameraxVersion")
-
     // MediaPipe GenAI for Gemma LLM
     implementation("com.google.mediapipe:tasks-genai:0.10.29")
 
-    // MediaPipe Vision for Face Detection
-    implementation("com.google.mediapipe:tasks-vision:0.10.21")
     // Testing
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")

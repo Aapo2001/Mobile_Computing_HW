@@ -1,7 +1,13 @@
 package com.example.myapplication.ui.sensor
 
 import android.Manifest
+import android.content.ComponentName
+import android.content.Context
+import android.content.Intent
+import android.content.ServiceConnection
+import android.content.pm.PackageManager
 import android.os.Build
+import android.os.IBinder
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -31,20 +37,25 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.core.content.ContextCompat
 import androidx.navigation.NavController
 import androidx.navigation.NavDestination
 import com.example.myapplication.navigation.BottomNavBar
 import com.example.myapplication.navigation.NavBar
 import com.example.myapplication.navigation.SensorDest
+import com.example.myapplication.service.SensorService
 
 @Composable
 fun SensorScreen(
@@ -55,24 +66,88 @@ fun SensorScreen(
 ) {
     val context = LocalContext.current
 
-    val viewModel: SensorViewModel = viewModel(
-        factory = SensorViewModel.provideFactory(context, initialShakeCount)
-    )
+    var hasNotificationPermission by remember {
+        mutableStateOf(
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                ContextCompat.checkSelfPermission(
+                    context, Manifest.permission.POST_NOTIFICATIONS
+                ) == PackageManager.PERMISSION_GRANTED
+            } else true
+        )
+    }
+    var accelX by remember { mutableFloatStateOf(0f) }
+    var accelY by remember { mutableFloatStateOf(0f) }
+    var accelZ by remember { mutableFloatStateOf(0f) }
+    var shakeCount by remember { mutableIntStateOf(initialShakeCount) }
+    var isServiceRunning by remember { mutableStateOf(false) }
+    var isBound by remember { mutableStateOf(false) }
+    var sensorService by remember { mutableStateOf<SensorService?>(null) }
 
-    val uiState by viewModel.uiState.collectAsState()
+    val serviceConnection = remember {
+        object : ServiceConnection {
+            override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
+                val binder = service as SensorService.LocalBinder
+                sensorService = binder.getService()
+                sensorService?.onSensorDataChanged = { x, y, z, count ->
+                    accelX = x
+                    accelY = y
+                    accelZ = z
+                    shakeCount = count
+                }
+                isServiceRunning = true
+                isBound = true
+            }
 
-    // Permission launcher
+            override fun onServiceDisconnected(name: ComponentName?) {
+                sensorService = null
+                isServiceRunning = false
+                isBound = false
+            }
+        }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            if (isBound) {
+                try {
+                    context.unbindService(serviceConnection)
+                } catch (_: IllegalArgumentException) { }
+            }
+        }
+    }
+
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { isGranted ->
-        viewModel.onPermissionResult(isGranted)
+        hasNotificationPermission = isGranted
     }
 
-    // Cleanup on dispose
-    DisposableEffect(Unit) {
-        onDispose {
-            viewModel.unbindService()
+    fun startSensorService() {
+        val intent = Intent(context, SensorService::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            context.startForegroundService(intent)
+        } else {
+            context.startService(intent)
         }
+        context.bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
+    }
+
+    fun stopSensorService() {
+        if (isBound) {
+            try {
+                context.unbindService(serviceConnection)
+            } catch (_: IllegalArgumentException) { }
+            isBound = false
+        }
+        val intent = Intent(context, SensorService::class.java)
+        context.stopService(intent)
+        isServiceRunning = false
+        sensorService = null
+    }
+
+    fun resetShakeCount() {
+        sensorService?.resetShakeCount()
+        shakeCount = 0
     }
 
     Scaffold(
@@ -95,25 +170,17 @@ fun SensorScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // Title
-            Text(
-                text = "HW4: Sensors & Notifications",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold
-            )
-
-            // Permission Card
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(
-                    containerColor = if (uiState.hasNotificationPermission)
+                    containerColor = if (hasNotificationPermission)
                         MaterialTheme.colorScheme.primaryContainer
                     else
                         MaterialTheme.colorScheme.errorContainer
                 )
             ) {
                 Column(
-                    modifier = Modifier.padding(16.dp),
+                    modifier = Modifier.padding(20.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Row(
@@ -125,7 +192,7 @@ fun SensorScreen(
                             contentDescription = "Notifications"
                         )
                         Text(
-                            text = if (uiState.hasNotificationPermission)
+                            text = if (hasNotificationPermission)
                                 "Notification Permission Granted"
                             else
                                 "Notification Permission Required",
@@ -133,7 +200,7 @@ fun SensorScreen(
                         )
                     }
 
-                    if (!uiState.hasNotificationPermission && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    if (!hasNotificationPermission && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                         Spacer(modifier = Modifier.height(8.dp))
                         Button(
                             onClick = {
@@ -145,8 +212,6 @@ fun SensorScreen(
                     }
                 }
             }
-
-            // Sensor Data Card
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(
@@ -176,16 +241,15 @@ fun SensorScreen(
 
                     Text(
                         text = "X: %.2f  Y: %.2f  Z: %.2f m/s²".format(
-                            uiState.accelX,
-                            uiState.accelY,
-                            uiState.accelZ
+                            accelX,
+                            accelY,
+                            accelZ
                         ),
                         style = MaterialTheme.typography.bodyMedium
                     )
                 }
             }
 
-            // Shake Counter Card - M3 styled
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(
@@ -211,14 +275,14 @@ fun SensorScreen(
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = "${uiState.shakeCount}",
+                                text = "$shakeCount",
                                 style = MaterialTheme.typography.displayMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onTertiaryContainer
                             )
                         }
                         FilledTonalButton(
-                            onClick = { viewModel.resetShakeCount() }
+                            onClick = { resetShakeCount() }
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Refresh,
@@ -239,7 +303,6 @@ fun SensorScreen(
                 }
             }
 
-            // Service Control - M3 ElevatedCard
             ElevatedCard(
                 modifier = Modifier.fillMaxWidth(),
                 elevation = CardDefaults.elevatedCardElevation(defaultElevation = 2.dp)
@@ -262,9 +325,9 @@ fun SensorScreen(
                                 style = MaterialTheme.typography.titleMedium
                             )
                             Text(
-                                text = if (uiState.isServiceRunning) "Running" else "Stopped",
+                                text = if (isServiceRunning) "Running" else "Stopped",
                                 style = MaterialTheme.typography.labelMedium,
-                                color = if (uiState.isServiceRunning)
+                                color = if (isServiceRunning)
                                     MaterialTheme.colorScheme.primary
                                 else
                                     MaterialTheme.colorScheme.error
@@ -272,18 +335,18 @@ fun SensorScreen(
                         }
 
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            FilledTonalButton(
-                                onClick = { viewModel.startSensorService() },
-                                enabled = !uiState.isServiceRunning
-                            ) {
-                                Text("Start")
-                            }
-
-                            OutlinedButton(
-                                onClick = { viewModel.stopSensorService() },
-                                enabled = uiState.isServiceRunning
-                            ) {
-                                Text("Stop")
+                            if (!isServiceRunning) {
+                                FilledTonalButton(
+                                    onClick = { startSensorService() }
+                                ) {
+                                    Text("Start")
+                                }
+                            } else {
+                                OutlinedButton(
+                                    onClick = { stopSensorService() }
+                                ) {
+                                    Text("Stop")
+                                }
                             }
                         }
                     }
