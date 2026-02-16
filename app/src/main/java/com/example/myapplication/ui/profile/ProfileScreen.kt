@@ -37,7 +37,7 @@ fun ProfileScreen(
     val userProfile by repository.userProfile.collectAsState(initial = null)
 
     Scaffold(
-        topBar = {
+            topBar = {
             NavBar(
                 title = Profile.label,
                 navigationIcon = Icons.AutoMirrored.Filled.ArrowBack,

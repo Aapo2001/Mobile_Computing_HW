@@ -4,6 +4,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -37,6 +39,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import androidx.navigation.NavDestination
+import com.example.myapplication.SampleData
 import com.example.myapplication.helper.GemmaHelper
 import com.example.myapplication.navigation.BottomNavBar
 import com.example.myapplication.navigation.Home
@@ -118,8 +121,8 @@ fun HomeScreen(
                 currentDestination = currentDestination
             )
         }
-    ) { innerPadding ->
-        Column(modifier = Modifier.padding(innerPadding)) {
+    ) { paddingValues ->
+        Column(Modifier.consumeWindowInsets(insets = WindowInsets(0, 0, 0, 0)).padding(paddingValues)) {
             Surface(
                 color = MaterialTheme.colorScheme.background,
                 modifier = Modifier.weight(1f)

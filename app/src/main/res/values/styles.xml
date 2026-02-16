@@ -3,5 +3,6 @@
     <style name="Widget.Theme.MyApplication.MyView" parent="">
         <item name="android:background">@color/gray_400</item>
         <item name="exampleColor">@color/light_blue_400</item>
+        <item name="android:windowActionBar">false</item>
     </style>
 </resources>

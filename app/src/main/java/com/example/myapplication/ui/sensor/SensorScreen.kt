@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -53,8 +54,6 @@ import androidx.core.content.ContextCompat
 import androidx.navigation.NavController
 import androidx.navigation.NavDestination
 import com.example.myapplication.navigation.BottomNavBar
-import com.example.myapplication.navigation.NavBar
-import com.example.myapplication.navigation.SensorDest
 import com.example.myapplication.service.SensorService
 
 @Composable
@@ -68,11 +67,9 @@ fun SensorScreen(
 
     var hasNotificationPermission by remember {
         mutableStateOf(
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                ContextCompat.checkSelfPermission(
-                    context, Manifest.permission.POST_NOTIFICATIONS
-                ) == PackageManager.PERMISSION_GRANTED
-            } else true
+            ContextCompat.checkSelfPermission(
+                context, Manifest.permission.POST_NOTIFICATIONS
+            ) == PackageManager.PERMISSION_GRANTED
         )
     }
     var accelX by remember { mutableFloatStateOf(0f) }
@@ -124,11 +121,7 @@ fun SensorScreen(
 
     fun startSensorService() {
         val intent = Intent(context, SensorService::class.java)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            context.startForegroundService(intent)
-        } else {
-            context.startService(intent)
-        }
+        context.startForegroundService(intent)
         context.bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
     }
 
@@ -151,9 +144,6 @@ fun SensorScreen(
     }
 
     Scaffold(
-        topBar = {
-            NavBar(title = SensorDest.label)
-        },
         bottomBar = {
             BottomNavBar(
                 navController = navController,

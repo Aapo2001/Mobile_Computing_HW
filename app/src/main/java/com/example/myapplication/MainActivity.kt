@@ -5,7 +5,6 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalContext
-import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.navigation.compose.rememberNavController
 import com.example.myapplication.navigation.Home
 import com.example.myapplication.navigation.MyAppNavHost
@@ -17,21 +16,15 @@ import com.example.myapplication.ui.theme.MyApplicationTheme
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
-        val splashScreen = installSplashScreen()
-
         super.onCreate(savedInstanceState)
 
-        var keepSplashOnScreen = true
-        splashScreen.setKeepOnScreenCondition { keepSplashOnScreen }
+        val actionBar = getActionBar()
+        actionBar!!.hide()
 
-        // Handle navigation from notification tap
         val navigateTo = intent?.getStringExtra("navigate_to")
         val shakeCount = intent?.getIntExtra("shake_count", 0) ?: 0
 
         setContent {
-
-            keepSplashOnScreen = false
-
             MyApp(
                 startRoute = if (navigateTo == "sensor") SensorDest.route else Home.route,
                 initialShakeCount = shakeCount

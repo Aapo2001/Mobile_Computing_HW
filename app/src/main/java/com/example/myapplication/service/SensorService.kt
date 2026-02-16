@@ -51,7 +51,7 @@ class SensorService : Service(), SensorEventListener {
         }
     }
 
-    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         // Start as foreground service
         val notification = notificationHelper.createServiceNotification()
@@ -64,7 +64,7 @@ class SensorService : Service(), SensorEventListener {
         // Register sensor listener
         registerSensorListener()
 
-        return START_STICKY
+        return START_NOT_STICKY
     }
 
     override fun onBind(intent: Intent?): IBinder {
