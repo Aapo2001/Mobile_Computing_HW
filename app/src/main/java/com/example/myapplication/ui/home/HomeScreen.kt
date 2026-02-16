@@ -42,7 +42,6 @@ import androidx.navigation.NavDestination
 import com.example.myapplication.SampleData
 import com.example.myapplication.helper.GemmaHelper
 import com.example.myapplication.navigation.BottomNavBar
-import com.example.myapplication.navigation.Home
 import com.example.myapplication.navigation.NavBar
 import com.example.myapplication.navigation.Profile
 import com.example.myapplication.repository.MessageRepository
@@ -109,7 +108,6 @@ fun HomeScreen(
     Scaffold(
         topBar = {
             NavBar(
-                title = Home.label,
                 navigationIcon = Profile.icon,
                 navigationIconDescription = "Go to Profile",
                 onClick = onclick

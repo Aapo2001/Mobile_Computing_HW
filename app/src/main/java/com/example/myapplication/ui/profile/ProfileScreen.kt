@@ -21,7 +21,6 @@ import coil.request.ImageRequest
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import com.example.myapplication.navigation.BottomNavBar
 import com.example.myapplication.navigation.NavBar
-import com.example.myapplication.navigation.Profile
 import com.example.myapplication.repository.UserProfileRepository
 import java.io.File
 
@@ -39,7 +38,6 @@ fun ProfileScreen(
     Scaffold(
             topBar = {
             NavBar(
-                title = Profile.label,
                 navigationIcon = Icons.AutoMirrored.Filled.ArrowBack,
                 navigationIconDescription = "Go back",
                 onClick = onNavigateBack

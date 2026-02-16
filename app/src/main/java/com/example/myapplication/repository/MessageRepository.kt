@@ -10,8 +10,6 @@ class MessageRepository(context: Context) {
 
     fun getAllMessages(): Flow<List<MessageEntity>> = messageDao.getAllMessages()
 
-    suspend fun getAllMessagesOnce(): List<MessageEntity> = messageDao.getAllMessagesOnce()
-
     suspend fun insertMessage(author: String, body: String) {
         messageDao.insertMessage(
             MessageEntity(
@@ -20,14 +18,4 @@ class MessageRepository(context: Context) {
             )
         )
     }
-
-    suspend fun deleteMessage(message: MessageEntity) {
-        messageDao.deleteMessage(message)
-    }
-
-    suspend fun deleteAllMessages() {
-        messageDao.deleteAllMessages()
-    }
-
-    suspend fun getMessageCount(): Int = messageDao.getMessageCount()
 }

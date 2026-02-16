@@ -14,7 +14,6 @@ import androidx.compose.ui.graphics.vector.ImageVector
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NavBar(
-    title: String = "",
     navigationIcon: ImageVector? = null,
     navigationIconDescription: String = "Navigate",
     onClick: (() -> Unit)? = null

@@ -55,7 +55,6 @@ fun MessageCard(msg: Message, userImagePath: String? = null) {
         horizontalArrangement = if (isGemma) Arrangement.Start else Arrangement.End
     ) {
         if (isGemma) {
-            // Avatar for Gemma (on the left)
             val imageModifier = Modifier
                 .size(40.dp)
                 .clip(CircleShape)
@@ -68,8 +67,7 @@ fun MessageCard(msg: Message, userImagePath: String? = null) {
             )
             Spacer(modifier = Modifier.width(8.dp))
         }
-        
-        // We keep track if the message is expanded or not
+
         var isExpanded by remember { mutableStateOf(false) }
 
         Column(
@@ -85,8 +83,6 @@ fun MessageCard(msg: Message, userImagePath: String? = null) {
             )
 
             Spacer(modifier = Modifier.height(4.dp))
-
-            // M3 Card for message bubble
             Card(
                 colors = CardDefaults.cardColors(
                     containerColor = if (isGemma)
@@ -112,7 +108,6 @@ fun MessageCard(msg: Message, userImagePath: String? = null) {
 
         if (!isGemma) {
             Spacer(modifier = Modifier.width(8.dp))
-            // Avatar for user (on the right)
             val imageModifier = Modifier
                 .size(40.dp)
                 .clip(CircleShape)
@@ -139,8 +134,6 @@ fun MessageCard(msg: Message, userImagePath: String? = null) {
 @Composable
 fun Conversation(messages: List<Message>, userImagePath: String? = null) {
     val listState = rememberLazyListState()
-
-    // Auto-scroll to bottom when new messages arrive
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) {
             listState.animateScrollToItem(messages.size - 1)

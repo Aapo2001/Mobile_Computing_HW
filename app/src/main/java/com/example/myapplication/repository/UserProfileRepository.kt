@@ -40,8 +40,4 @@ class UserProfileRepository(private val context: Context) {
         return file.absolutePath
     }
 
-    fun getImageFile(): File? {
-        val file = File(context.filesDir, "profile_picture.jpg")
-        return if (file.exists()) file else null
-    }
 }

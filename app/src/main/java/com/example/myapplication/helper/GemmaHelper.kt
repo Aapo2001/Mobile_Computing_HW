@@ -22,13 +22,11 @@ class GemmaHelper(private val context: Context) {
 
         try {
             val modelFile = File(context.filesDir, MODEL_NAME)
-
-            // Copy from assets if not already in files directory
             if (!modelFile.exists()) {
                 try {
                     copyModelFromAssets(modelFile)
                 } catch (e: Exception) {
-                    initError = "Model file not found in assets. Please place $MODEL_NAME in app/src/main/assets/"
+                    initError = "Model file not found in assets. Please place $MODEL_NAME in app/src/main/assets/ ${e.message}"
                     return@withContext false
                 }
             }
