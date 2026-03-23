@@ -1,5 +1,6 @@
 package com.example.myapplication.ui.profile
 
+import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -18,15 +19,21 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import androidx.navigation.NavDestination
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.example.myapplication.navigation.BottomNavBar
 import com.example.myapplication.repository.UserProfileRepository
+import kotlinx.coroutines.launch
 import java.io.File
 
+/**
+ * Profile editing screen used to capture the user's display name and profile image.
+ *
+ * The selected image URI is only temporary. When the user saves, the repository copies the image
+ * into app-private storage and updates the single profile row in Room.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProfileInputView(
@@ -36,18 +43,36 @@ fun ProfileInputView(
     currentDestination: NavDestination?
 ) {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
 
-    val viewModel: ProfileEditViewModel = viewModel(
-        factory = ProfileEditViewModel.provideFactory(repository)
-    )
+    // Compose-local edit state for the current form session.
+    var username by remember { mutableStateOf("") }
+    var selectedImageUri by remember { mutableStateOf<Uri?>(null) }
+    var displayImagePath by remember { mutableStateOf<String?>(null) }
+    var isSaving by remember { mutableStateOf(false) }
+    var hasLoadedProfile by remember { mutableStateOf(false) }
 
-    val uiState by viewModel.uiState.collectAsState()
+    // Load current profile
+    val currentProfile by repository.userProfile.collectAsState(initial = null)
+    LaunchedEffect(currentProfile) {
+        currentProfile?.let { profile ->
+            // Pre-fill the form once when the stored profile becomes available.
+            if (!hasLoadedProfile) {
+                username = profile.username
+                displayImagePath = profile.imagePath
+                hasLoadedProfile = true
+            }
+        }
+    }
 
     // Photo picker launcher
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri ->
-        uri?.let { viewModel.selectImage(it) }
+        uri?.let {
+            selectedImageUri = it
+            displayImagePath = null
+        }
     }
 
     Scaffold(
@@ -100,10 +125,10 @@ fun ProfileInputView(
                 tonalElevation = 4.dp
             ) {
                 when {
-                    uiState.selectedImageUri != null -> {
+                    selectedImageUri != null -> {
                         AsyncImage(
                             model = ImageRequest.Builder(context)
-                                .data(uiState.selectedImageUri)
+                                .data(selectedImageUri)
                                 .crossfade(true)
                                 .build(),
                             contentDescription = "Selected profile picture",
@@ -111,10 +136,10 @@ fun ProfileInputView(
                             contentScale = ContentScale.Crop
                         )
                     }
-                    uiState.displayImagePath != null -> {
+                    displayImagePath != null -> {
                         AsyncImage(
                             model = ImageRequest.Builder(context)
-                                .data(File(uiState.displayImagePath!!))
+                                .data(File(displayImagePath!!))
                                 .crossfade(true)
                                 .build(),
                             contentDescription = "Profile picture",
@@ -159,8 +184,8 @@ fun ProfileInputView(
 
             // Username input with M3 styling
             OutlinedTextField(
-                value = uiState.username,
-                onValueChange = { viewModel.updateUsername(it) },
+                value = username,
+                onValueChange = { username = it },
                 label = { Text("Username") },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
@@ -176,15 +201,21 @@ fun ProfileInputView(
             // Save and navigate button - M3 Filled Button
             Button(
                 onClick = {
-                    viewModel.saveProfile { onclick() }
+                    coroutineScope.launch {
+                        // Persist the new values before returning to the profile screen.
+                        isSaving = true
+                        repository.updateProfile(username, selectedImageUri)
+                        isSaving = false
+                        onclick()
+                    }
                 },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(56.dp),
-                enabled = uiState.username.isNotBlank() && !uiState.isSaving,
+                enabled = username.isNotBlank() && !isSaving,
                 shape = MaterialTheme.shapes.large
             ) {
-                if (uiState.isSaving) {
+                if (isSaving) {
                     CircularProgressIndicator(
                         modifier = Modifier.size(20.dp),
                         strokeWidth = 2.dp,

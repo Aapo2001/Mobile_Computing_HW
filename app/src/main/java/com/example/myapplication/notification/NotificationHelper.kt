@@ -10,6 +10,14 @@ import androidx.core.app.NotificationCompat
 import com.example.myapplication.MainActivity
 import com.example.myapplication.R
 
+/**
+ * Centralizes notification channel setup and notification construction for the sensor feature.
+ *
+ * Two notification types are supported:
+ *
+ * - a persistent foreground-service notification while accelerometer monitoring is active
+ * - user-visible shake notifications that deep-link back into the sensor screen
+ */
 class NotificationHelper(private val context: Context) {
 
     companion object {
@@ -28,6 +36,7 @@ class NotificationHelper(private val context: Context) {
         createNotificationChannel()
     }
 
+    /** Creates the notification channel required on Android O and above. */
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
@@ -41,6 +50,10 @@ class NotificationHelper(private val context: Context) {
         }
     }
 
+    /**
+     * Posts a notification describing the current shake count and wiring a tap back into the
+     * sensor screen.
+     */
     fun showShakeNotification(shakeCount: Int) {
         // Create intent that opens the app when notification is tapped
         val intent = Intent(context, MainActivity::class.java).apply {
@@ -68,6 +81,10 @@ class NotificationHelper(private val context: Context) {
         notificationManager.notify(SHAKE_NOTIFICATION_ID, notification)
     }
 
+    /**
+     * Creates the ongoing notification required for running [com.example.myapplication.service.SensorService]
+     * as a foreground service.
+     */
     fun createServiceNotification(): android.app.Notification {
         val intent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK

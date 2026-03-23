@@ -2,6 +2,12 @@ package com.example.myapplication.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
+/**
+ * Static fallback Material 3 color tokens used when dynamic color is unavailable.
+ *
+ * On Android 12 and above the app prefers dynamic Material You colors at runtime, but these named
+ * tokens remain the deterministic palette for previews, older devices, and explicit fallback.
+ */
 // Material 3 Color System
 // Seed color: Purple (#6750A4)
 

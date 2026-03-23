@@ -18,7 +18,12 @@ import com.example.myapplication.ui.video.VideoScreen
 import com.example.myapplication.repository.MessageRepository
 import com.example.myapplication.repository.UserProfileRepository
 
-
+/**
+ * Central navigation graph for the application.
+ *
+ * This composable wires the shared repositories into the screens that need them and exposes the
+ * resolved `currentDestination` so the top and bottom bars can render the correct selected state.
+ */
 @Composable
 fun MyAppNavHost(
     navController: NavHostController,
@@ -101,6 +106,10 @@ fun MyAppNavHost(
     }
 }
 
+/**
+ * Small navigation helper that enables "single top" routing and optional `popUpTo` behavior to
+ * avoid unnecessary duplicate destinations on the stack.
+ */
 fun NavHostController.navigateSingleTopTo(route: String, popUpToRoute: String? = null) =
     this.navigate(route) {
         popUpTo(

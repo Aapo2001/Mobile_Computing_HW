@@ -40,9 +40,20 @@ import com.example.myapplication.R
 import com.example.myapplication.ui.theme.MyApplicationTheme
 import java.io.File
 
+/**
+ * UI-layer representation of a single message shown in the conversation list.
+ *
+ * This keeps presentation concerns, such as [imagePath], separate from the Room entity used for
+ * persistence.
+ */
 data class Message(val author: String, val body: String, val imagePath: String? = null)
 
-
+/**
+ * Renders one row in the conversation, including the message bubble and avatar.
+ *
+ * Messages authored by `"Gemma"` are left-aligned and use the bundled avatar, while user messages
+ * are right-aligned and prefer the saved profile image when available.
+ */
 @Composable
 fun MessageCard(msg: Message, userImagePath: String? = null) {
     val isGemma = msg.author == "Gemma"
@@ -67,7 +78,7 @@ fun MessageCard(msg: Message, userImagePath: String? = null) {
             )
             Spacer(modifier = Modifier.width(8.dp))
         }
-        
+
         // We keep track if the message is expanded or not
         var isExpanded by remember { mutableStateOf(false) }
 
@@ -135,6 +146,12 @@ fun MessageCard(msg: Message, userImagePath: String? = null) {
         }
     }
 }
+
+/**
+ * Scrollable conversation list used by the home screen and preview.
+ *
+ * The list automatically animates to the latest item whenever a new message is appended.
+ */
 @Composable
 fun Conversation(messages: List<Message>, userImagePath: String? = null) {
     val listState = rememberLazyListState()
@@ -157,6 +174,7 @@ fun Conversation(messages: List<Message>, userImagePath: String? = null) {
     }
 }
 
+/** Preview used to validate the conversation layout in isolation. */
 @Preview
 @Composable
 fun PreviewConversation() {

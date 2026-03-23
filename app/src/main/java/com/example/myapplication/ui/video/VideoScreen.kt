@@ -1,5 +1,6 @@
 package com.example.myapplication.ui.video
 
+import android.net.Uri
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -39,8 +40,14 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -48,16 +55,27 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.net.toUri
-import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import androidx.navigation.NavController
 import androidx.navigation.NavDestination
 import com.example.myapplication.navigation.BottomNavBar
 import com.example.myapplication.navigation.NavBar
 import com.example.myapplication.navigation.VideoDest
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @OptIn(UnstableApi::class)
+/**
+ * Video playback screen built on top of Media3 / ExoPlayer.
+ *
+ * Users can either pick a local file through the system picker or load one of the bundled sample
+ * remote videos. Playback progress is mirrored into Compose state so the custom slider stays in
+ * sync with the player.
+ */
 @Composable
 fun VideoScreen(
     modifier: Modifier = Modifier,
@@ -65,25 +83,69 @@ fun VideoScreen(
     currentDestination: NavDestination?
 ) {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
 
-    val viewModel: VideoViewModel = viewModel(
-        factory = VideoViewModel.provideFactory(context)
-    )
+    // Compose-local state mirrors the currently selected media item and its playback progress.
+    var videoUri by remember { mutableStateOf<Uri?>(null) }
+    var isPlaying by remember { mutableStateOf(false) }
+    var currentPosition by remember { mutableLongStateOf(0L) }
+    var duration by remember { mutableLongStateOf(0L) }
+    var sliderPosition by remember { mutableFloatStateOf(0f) }
+    var isSeeking by remember { mutableStateOf(false) }
 
-    val uiState by viewModel.uiState.collectAsState()
+    val exoPlayer = remember {
+        ExoPlayer.Builder(context).build().apply {
+            addListener(object : Player.Listener {
+                override fun onPlaybackStateChanged(playbackState: Int) {
+                    if (playbackState == Player.STATE_READY) {
+                        duration = this@apply.duration
+                    }
+                }
 
-    // Video picker launcher
-    val videoPickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri ->
-        uri?.let { viewModel.selectVideo(it) }
+                override fun onIsPlayingChanged(playing: Boolean) {
+                    isPlaying = playing
+                }
+            })
+        }
+    }
+
+    // Position update loop
+    LaunchedEffect(isPlaying) {
+        while (isPlaying) {
+            if (!isSeeking) {
+                val pos = exoPlayer.currentPosition
+                currentPosition = pos
+                sliderPosition = if (duration > 0) pos.toFloat() / duration.toFloat() else 0f
+            }
+            delay(100)
+        }
     }
 
     // Cleanup
     DisposableEffect(Unit) {
         onDispose {
-            // ViewModel handles cleanup in onCleared
+            exoPlayer.release()
         }
+    }
+
+    // Loads media into ExoPlayer without automatically pressing play.
+    val selectVideo = { uri: Uri ->
+        videoUri = uri
+        exoPlayer.setMediaItem(MediaItem.fromUri(uri))
+        exoPlayer.prepare()
+    }
+
+    // Convenience wrapper for sample-video buttons that should begin playback immediately.
+    val selectAndPlayVideo = { uri: Uri ->
+        selectVideo(uri)
+        exoPlayer.play()
+    }
+
+    // Video picker launcher
+    val videoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        uri?.let { selectVideo(it) }
     }
 
     // Sample video URLs
@@ -132,11 +194,11 @@ fun VideoScreen(
                             .aspectRatio(16f / 9f),
                         contentAlignment = Alignment.Center
                     ) {
-                        if (uiState.videoUri != null || viewModel.exoPlayer.mediaItemCount > 0) {
+                        if (videoUri != null || exoPlayer.mediaItemCount > 0) {
                             AndroidView(
                                 factory = { ctx ->
                                     PlayerView(ctx).apply {
-                                        player = viewModel.exoPlayer
+                                        player = exoPlayer
                                         useController = false
                                         layoutParams = FrameLayout.LayoutParams(
                                             ViewGroup.LayoutParams.MATCH_PARENT,
@@ -169,12 +231,18 @@ fun VideoScreen(
                     Spacer(modifier = Modifier.height(8.dp))
 
                     // Progress Slider
-                    if (uiState.duration > 0) {
+                    if (duration > 0) {
                         Column(modifier = Modifier.fillMaxWidth()) {
                             Slider(
-                                value = uiState.sliderPosition,
-                                onValueChange = { viewModel.onSliderValueChange(it) },
-                                onValueChangeFinished = { viewModel.onSliderValueChangeFinished() },
+                                value = sliderPosition,
+                                onValueChange = {
+                                    isSeeking = true
+                                    sliderPosition = it
+                                },
+                                onValueChangeFinished = {
+                                    exoPlayer.seekTo((sliderPosition * duration).toLong())
+                                    isSeeking = false
+                                },
                                 modifier = Modifier.fillMaxWidth()
                             )
                             Row(
@@ -182,11 +250,11 @@ fun VideoScreen(
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
                                 Text(
-                                    text = formatTime(uiState.currentPosition),
+                                    text = formatTime(currentPosition),
                                     style = MaterialTheme.typography.bodySmall
                                 )
                                 Text(
-                                    text = formatTime(uiState.duration),
+                                    text = formatTime(duration),
                                     style = MaterialTheme.typography.bodySmall
                                 )
                             }
@@ -200,22 +268,29 @@ fun VideoScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         FilledIconButton(
-                            onClick = { viewModel.togglePlayPause() },
-                            enabled = uiState.videoUri != null || viewModel.exoPlayer.mediaItemCount > 0,
+                            onClick = {
+                                if (isPlaying) exoPlayer.pause() else exoPlayer.play()
+                            },
+                            enabled = videoUri != null || exoPlayer.mediaItemCount > 0,
                             colors = IconButtonDefaults.filledIconButtonColors(
                                 containerColor = MaterialTheme.colorScheme.primary,
                                 contentColor = MaterialTheme.colorScheme.onPrimary
                             )
                         ) {
                             Icon(
-                                imageVector = if (uiState.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                                contentDescription = if (uiState.isPlaying) "Pause" else "Play"
+                                imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                contentDescription = if (isPlaying) "Pause" else "Play"
                             )
                         }
                         Spacer(modifier = Modifier.width(12.dp))
                         IconButton(
-                            onClick = { viewModel.stop() },
-                            enabled = uiState.videoUri != null || viewModel.exoPlayer.mediaItemCount > 0
+                            onClick = {
+                                exoPlayer.stop()
+                                exoPlayer.seekTo(0)
+                                currentPosition = 0
+                                sliderPosition = 0f
+                            },
+                            enabled = videoUri != null || exoPlayer.mediaItemCount > 0
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Stop,
@@ -255,7 +330,7 @@ fun VideoScreen(
                     )
                     sampleVideos.forEach { (name, url) ->
                         FilledTonalButton(
-                            onClick = { viewModel.selectAndPlayVideo(url.toUri()) },
+                            onClick = { selectAndPlayVideo(url.toUri()) },
                             modifier = Modifier.fillMaxWidth(),
                             shape = MaterialTheme.shapes.medium
                         ) {
@@ -268,6 +343,7 @@ fun VideoScreen(
     }
 }
 
+/** Formats a millisecond playback position into `m:ss` for the progress labels. */
 private fun formatTime(millis: Long): String {
     val totalSeconds = millis / 1000
     val minutes = totalSeconds / 60

@@ -15,7 +15,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import androidx.navigation.NavDestination
 import coil.compose.AsyncImage
@@ -26,6 +25,12 @@ import com.example.myapplication.navigation.Profile
 import com.example.myapplication.repository.UserProfileRepository
 import java.io.File
 
+/**
+ * Read-only profile screen that renders the user's saved username and avatar.
+ *
+ * The data comes directly from [UserProfileRepository.userProfile], so this screen updates
+ * automatically whenever the edit flow persists a new profile.
+ */
 @Composable
 fun ProfileScreen(
     onclick: () -> Unit,
@@ -36,12 +41,7 @@ fun ProfileScreen(
 ) {
     val context = LocalContext.current
 
-    val viewModel: ProfileViewModel = viewModel(
-        factory = ProfileViewModel.provideFactory(repository)
-    )
-
-    val uiState by viewModel.uiState.collectAsState()
-    val userProfile = uiState.userProfile
+    val userProfile by repository.userProfile.collectAsState(initial = null)
 
     Scaffold(
         topBar = {
@@ -77,7 +77,7 @@ fun ProfileScreen(
 
             Spacer(modifier = Modifier.height(32.dp))
 
-            // Profile image with M3 styling
+            // Render the persisted image when present; otherwise show a default placeholder icon.
             Surface(
                 modifier = Modifier
                     .size(180.dp)
@@ -93,7 +93,7 @@ fun ProfileScreen(
                 if (userProfile?.imagePath?.isNotEmpty() == true) {
                     AsyncImage(
                         model = ImageRequest.Builder(context)
-                            .data(File(userProfile.imagePath))
+                            .data(File(userProfile!!.imagePath))
                             .crossfade(true)
                             .build(),
                         contentDescription = "Profile picture",

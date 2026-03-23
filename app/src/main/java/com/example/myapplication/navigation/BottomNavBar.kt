@@ -11,6 +11,12 @@ import androidx.navigation.NavDestination
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 
+/**
+ * Bottom navigation bar shared by the main feature screens.
+ *
+ * Navigation is configured to keep the back stack compact and to restore previously selected tab
+ * state where possible.
+ */
 @Composable
 fun BottomNavBar(
     navController: NavController,

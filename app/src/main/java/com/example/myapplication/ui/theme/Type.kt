@@ -6,6 +6,12 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 
+/**
+ * Material 3 typography scale used by the application.
+ *
+ * The project keeps the default font family and defines a full set of display, headline, title,
+ * body, and label styles so every screen can rely on a consistent text system.
+ */
 // Material 3 Typography Scale
 // Based on M3 design guidelines: https://m3.material.io/styles/typography
 

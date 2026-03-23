@@ -1,6 +1,11 @@
 package com.example.myapplication.ui.audio
 
 import android.Manifest
+import android.content.pm.PackageManager
+import android.media.MediaPlayer
+import android.media.MediaRecorder
+import android.os.Build
+import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -41,8 +46,14 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -50,14 +61,33 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.core.content.ContextCompat
+import com.example.myapplication.helper.AudioGemmaHelper
 import com.example.myapplication.helper.AudioTranscriptionHelper
 import com.example.myapplication.navigation.BottomNavBar
 import com.example.myapplication.navigation.AudioDest
 import com.example.myapplication.navigation.NavBar
 import androidx.navigation.NavController
 import androidx.navigation.NavDestination
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import java.io.File
+import java.io.IOException
+import java.text.SimpleDateFormat
+import java.util.Locale
 
+/**
+ * Audio feature screen.
+ *
+ * The screen groups several related audio workflows into one place:
+ *
+ * - recording microphone audio with [MediaRecorder]
+ * - playing saved recordings with [MediaPlayer]
+ * - live speech-to-text through [AudioTranscriptionHelper]
+ * - optional Gemma-based transcription and text processing through [AudioGemmaHelper]
+ *
+ * Saved recordings are written into `filesDir/recordings/`.
+ */
 @Composable
 fun AudioScreen(
     modifier: Modifier = Modifier,
@@ -67,24 +97,216 @@ fun AudioScreen(
 ) {
     val context = LocalContext.current
     val scrollState = rememberScrollState()
+    val coroutineScope = rememberCoroutineScope()
 
-    val viewModel: AudioViewModel = viewModel(
-        factory = AudioViewModel.provideFactory(context)
-    )
+    // Compose-local state mirrors the current recording, playback, transcription, and AI session.
+    var hasAudioPermission by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+        )
+    }
+    var isRecording by remember { mutableStateOf(false) }
+    var recordingDuration by remember { mutableFloatStateOf(0f) }
+    var recordings by remember { mutableStateOf<List<File>>(emptyList()) }
+    var currentlyPlaying by remember { mutableStateOf<File?>(null) }
+    var isPlaying by remember { mutableStateOf(false) }
+    var playbackProgress by remember { mutableFloatStateOf(0f) }
+    var lastTranscription by remember { mutableStateOf("") }
+    var gemmaStatus by remember { mutableStateOf("Initializing Gemma-3n...") }
+    var isProcessingWithGemma by remember { mutableStateOf(false) }
+    var gemmaTranscription by remember { mutableStateOf("") }
+    var gemmaResponse by remember { mutableStateOf("") }
 
-    val uiState by viewModel.uiState.collectAsState()
+    val recordingsDir = remember { File(context.filesDir, "recordings").apply { mkdirs() } }
+    var recorder by remember { mutableStateOf<MediaRecorder?>(null) }
+    var player by remember { mutableStateOf<MediaPlayer?>(null) }
 
-    // Permission launcher
-    val permissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
-    ) { isGranted ->
-        viewModel.onPermissionResult(isGranted)
+    val audioGemmaHelper = remember { AudioGemmaHelper(context) }
+    val transcriptionHelper = remember { AudioTranscriptionHelper(context) }
+
+    // Collect transcription state
+    val transcriptionState by transcriptionHelper.transcriptionState.collectAsState()
+    val isTranscribing by transcriptionHelper.isListening.collectAsState()
+
+    // Track last successful transcription
+    LaunchedEffect(transcriptionState) {
+        if (transcriptionState is AudioTranscriptionHelper.TranscriptionState.Success) {
+            lastTranscription = (transcriptionState as AudioTranscriptionHelper.TranscriptionState.Success).text
+        }
+    }
+
+    // Load existing recordings
+    LaunchedEffect(Unit) {
+        val existingRecordings = recordingsDir.listFiles()
+            ?.filter { it.extension == "waw" }
+            ?.sortedByDescending { it.lastModified() }
+            ?: emptyList()
+        recordings = existingRecordings
+    }
+
+    // Initialize Gemma
+    LaunchedEffect(Unit) {
+        val success = audioGemmaHelper.initialize()
+        gemmaStatus = if (success) "Gemma-3n ready" else (audioGemmaHelper.getError() ?: "Failed to initialize")
+    }
+
+    // Recording timer
+    LaunchedEffect(isRecording) {
+        while (isRecording) {
+            delay(100)
+            recordingDuration += 0.1f
+        }
+    }
+
+    // Playback progress updates
+    LaunchedEffect(isPlaying) {
+        while (isPlaying && player?.isPlaying == true) {
+            val current = player?.currentPosition?.toFloat() ?: 0f
+            val total = player?.duration?.toFloat() ?: 1f
+            playbackProgress = current / total
+            delay(100)
+        }
+        if (!isPlaying || player?.isPlaying != true) {
+            playbackProgress = 0f
+        }
     }
 
     // Cleanup
     DisposableEffect(Unit) {
         onDispose {
-            // ViewModel handles cleanup in onCleared
+            recorder?.release()
+            player?.release()
+            transcriptionHelper.close()
+            audioGemmaHelper.close()
+        }
+    }
+
+    // Permission launcher
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        hasAudioPermission = isGranted
+    }
+
+    val loadRecordings = {
+        val existingRecordings = recordingsDir.listFiles()
+            ?.filter { it.extension == "waw" }
+            ?.sortedByDescending { it.lastModified() }
+            ?: emptyList()
+        recordings = existingRecordings
+    }
+
+    // Starts a new recorder session and writes into a timestamped file in internal storage.
+    val startRecording = {
+        val audioFile = File(
+            recordingsDir,
+            "recording_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(System.currentTimeMillis())}.waw"
+        )
+
+        recorder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            MediaRecorder(context)
+        } else {
+            @Suppress("DEPRECATION")
+            MediaRecorder()
+        }.apply {
+            try {
+                setAudioSource(MediaRecorder.AudioSource.MIC)
+                setOutputFormat(MediaRecorder.OutputFormat.DEFAULT)
+                setAudioEncoder(MediaRecorder.AudioEncoder.DEFAULT)
+                setAudioEncodingBitRate(128000)
+                setAudioSamplingRate(44100)
+                setOutputFile(audioFile.absolutePath)
+                prepare()
+                start()
+                isRecording = true
+                recordingDuration = 0f
+            } catch (e: IOException) {
+                Log.e("AudioScreen", "Recording failed", e)
+            }
+        }
+    }
+
+    val stopRecording = {
+        try {
+            recorder?.apply {
+                stop()
+                release()
+            }
+        } catch (e: Exception) {
+            Log.e("AudioScreen", "Stop recording failed", e)
+        }
+        recorder = null
+        isRecording = false
+        loadRecordings()
+    }
+
+    // Shared stop helper so all playback exits reset the same UI state consistently.
+    val stopPlayback = {
+        player?.stop()
+        player?.release()
+        player = null
+        isPlaying = false
+        currentlyPlaying = null
+        playbackProgress = 0f
+    }
+
+    val playRecording = { file: File ->
+        player?.release()
+        player = null
+        isPlaying = false
+
+        player = MediaPlayer().apply {
+            try {
+                setDataSource(file.absolutePath)
+                prepare()
+                start()
+                currentlyPlaying = file
+                isPlaying = true
+
+                setOnCompletionListener {
+                    isPlaying = false
+                    currentlyPlaying = null
+                    playbackProgress = 0f
+                }
+            } catch (e: IOException) {
+                Log.e("AudioScreen", "Playback failed", e)
+            }
+        }
+    }
+
+    val deleteRecording = { file: File ->
+        if (currentlyPlaying == file) {
+            stopPlayback()
+        }
+        file.delete()
+        recordings = recordings - file
+    }
+
+    // Uses the audio Gemma model to transcribe or interpret a recorded file.
+    val transcribeWithGemma = { audioFile: File ->
+        if (audioGemmaHelper.isReady()) {
+            coroutineScope.launch {
+                isProcessingWithGemma = true
+                gemmaTranscription = ""
+                gemmaResponse = ""
+                val transcription = audioGemmaHelper.transcribeAudioFile(audioFile)
+                gemmaTranscription = transcription
+                isProcessingWithGemma = false
+            }
+        }
+    }
+
+    // Sends already transcribed text to Gemma for summarization or refinement.
+    val processWithGemma = { text: String ->
+        if (text.isNotBlank() && audioGemmaHelper.isReady()) {
+            coroutineScope.launch {
+                isProcessingWithGemma = true
+                gemmaResponse = ""
+                val prompt = "Please summarize or enhance the following transcribed speech:\n\n\"$text\"\n\nProvide a clear and concise response:"
+                val response = audioGemmaHelper.generateResponse(prompt)
+                gemmaResponse = response
+                isProcessingWithGemma = false
+            }
         }
     }
 
@@ -116,7 +338,7 @@ fun AudioScreen(
             ) {
                 Spacer(modifier = Modifier.height(16.dp))
 
-                if (!uiState.hasAudioPermission) {
+                if (!hasAudioPermission) {
                     // Permission Card
                     Card(
                         modifier = Modifier.fillMaxWidth(),
@@ -156,7 +378,7 @@ fun AudioScreen(
                     Card(
                         modifier = Modifier.fillMaxWidth(),
                         colors = CardDefaults.cardColors(
-                            containerColor = if (uiState.isRecording)
+                            containerColor = if (isRecording)
                                 MaterialTheme.colorScheme.errorContainer
                             else
                                 MaterialTheme.colorScheme.primaryContainer
@@ -169,10 +391,10 @@ fun AudioScreen(
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             Icon(
-                                imageVector = if (uiState.isRecording) Icons.Default.Mic else Icons.Default.MicOff,
+                                imageVector = if (isRecording) Icons.Default.Mic else Icons.Default.MicOff,
                                 contentDescription = "Recording Status",
                                 modifier = Modifier.size(64.dp),
-                                tint = if (uiState.isRecording)
+                                tint = if (isRecording)
                                     MaterialTheme.colorScheme.error
                                 else
                                     MaterialTheme.colorScheme.primary
@@ -181,15 +403,15 @@ fun AudioScreen(
                             Spacer(modifier = Modifier.height(16.dp))
 
                             Text(
-                                text = if (uiState.isRecording) "Recording..." else "Ready to Record",
+                                text = if (isRecording) "Recording..." else "Ready to Record",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold
                             )
 
-                            if (uiState.isRecording) {
+                            if (isRecording) {
                                 Spacer(modifier = Modifier.height(8.dp))
                                 Text(
-                                    text = "%.1f seconds".format(uiState.recordingDuration),
+                                    text = "%.1f seconds".format(recordingDuration),
                                     style = MaterialTheme.typography.displaySmall,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.error
@@ -204,7 +426,7 @@ fun AudioScreen(
                             Spacer(modifier = Modifier.height(8.dp))
 
                             Text(
-                                text = if (uiState.isRecording)
+                                text = if (isRecording)
                                     "Tap the button to stop"
                                 else
                                     "Tap the microphone button to start recording",
@@ -218,7 +440,7 @@ fun AudioScreen(
                 Spacer(modifier = Modifier.height(16.dp))
 
                 // Live Transcription Card
-                if (uiState.hasAudioPermission) {
+                if (hasAudioPermission) {
                     Card(
                         modifier = modifier.fillMaxWidth(),
                         colors = CardDefaults.cardColors(
@@ -242,9 +464,9 @@ fun AudioScreen(
                                     fontWeight = FontWeight.Bold
                                 )
 
-                                if (uiState.isTranscribing) {
+                                if (isTranscribing) {
                                     OutlinedButton(
-                                        onClick = { viewModel.stopTranscription() }
+                                        onClick = { transcriptionHelper.stopListening() }
                                     ) {
                                         Icon(
                                             imageVector = Icons.Default.Close,
@@ -254,8 +476,8 @@ fun AudioScreen(
                                     }
                                 } else {
                                     Button(
-                                        onClick = { viewModel.startTranscription() },
-                                        enabled = !uiState.isRecording
+                                        onClick = { transcriptionHelper.startListening() },
+                                        enabled = !isRecording
                                     ) {
                                         Icon(
                                             imageVector = Icons.Default.RecordVoiceOver,
@@ -269,7 +491,7 @@ fun AudioScreen(
                             Spacer(modifier = Modifier.height(12.dp))
 
                             // Transcription status and result
-                            when (val state = uiState.transcriptionState) {
+                            when (val state = transcriptionState) {
                                 is AudioTranscriptionHelper.TranscriptionState.Idle -> {
                                     Text(
                                         text = "Tap Start to begin live transcription",
@@ -344,9 +566,9 @@ fun AudioScreen(
                                 }
                             }
 
-                            // Show last successful transcription
-                            if (uiState.lastTranscription.isNotEmpty() &&
-                                uiState.transcriptionState !is AudioTranscriptionHelper.TranscriptionState.Success
+                            // Keep the most recent final transcription visible even after state changes.
+                            if (lastTranscription.isNotEmpty() &&
+                                transcriptionState !is AudioTranscriptionHelper.TranscriptionState.Success
                             ) {
                                 Spacer(modifier = Modifier.height(8.dp))
                                 Text(
@@ -355,30 +577,30 @@ fun AudioScreen(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                                 Text(
-                                    text = uiState.lastTranscription,
+                                    text = lastTranscription,
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
 
                             // Process with Gemma button
-                            if (uiState.lastTranscription.isNotEmpty() ||
-                                uiState.transcriptionState is AudioTranscriptionHelper.TranscriptionState.Success
+                            if (lastTranscription.isNotEmpty() ||
+                                transcriptionState is AudioTranscriptionHelper.TranscriptionState.Success
                             ) {
                                 Spacer(modifier = Modifier.height(12.dp))
                                 Button(
                                     onClick = {
                                         val textToProcess =
-                                            if (uiState.transcriptionState is AudioTranscriptionHelper.TranscriptionState.Success) {
-                                                (uiState.transcriptionState as AudioTranscriptionHelper.TranscriptionState.Success).text
+                                            if (transcriptionState is AudioTranscriptionHelper.TranscriptionState.Success) {
+                                                (transcriptionState as AudioTranscriptionHelper.TranscriptionState.Success).text
                                             } else {
-                                                uiState.lastTranscription
+                                                lastTranscription
                                             }
-                                        viewModel.processWithGemma(textToProcess)
+                                        processWithGemma(textToProcess)
                                     },
-                                    enabled = viewModel.isGemmaReady() && !uiState.isProcessingWithGemma
+                                    enabled = audioGemmaHelper.isReady() && !isProcessingWithGemma
                                 ) {
-                                    if (uiState.isProcessingWithGemma) {
+                                    if (isProcessingWithGemma) {
                                         CircularProgressIndicator(
                                             modifier = Modifier.size(16.dp),
                                             strokeWidth = 2.dp,
@@ -396,10 +618,10 @@ fun AudioScreen(
                             }
 
                             // Gemma status
-                            if (!viewModel.isGemmaReady()) {
+                            if (!audioGemmaHelper.isReady()) {
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Text(
-                                    text = uiState.gemmaStatus,
+                                    text = gemmaStatus,
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -408,7 +630,7 @@ fun AudioScreen(
                     }
 
                     // Gemma Transcription Card
-                    if (uiState.gemmaTranscription.isNotEmpty() || uiState.gemmaResponse.isNotEmpty() || uiState.isProcessingWithGemma) {
+                    if (gemmaTranscription.isNotEmpty() || gemmaResponse.isNotEmpty() || isProcessingWithGemma) {
                         Spacer(modifier = Modifier.height(12.dp))
                         Card(
                             modifier = Modifier.fillMaxWidth(),
@@ -434,7 +656,7 @@ fun AudioScreen(
                                     )
                                 }
 
-                                if (uiState.isProcessingWithGemma) {
+                                if (isProcessingWithGemma) {
                                     Spacer(modifier = Modifier.height(8.dp))
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         CircularProgressIndicator(
@@ -448,7 +670,7 @@ fun AudioScreen(
                                     }
                                 }
 
-                                if (uiState.gemmaTranscription.isNotEmpty()) {
+                                if (gemmaTranscription.isNotEmpty()) {
                                     Spacer(modifier = Modifier.height(8.dp))
                                     Text(
                                         text = "Transcription:",
@@ -462,14 +684,14 @@ fun AudioScreen(
                                         )
                                     ) {
                                         Text(
-                                            text = uiState.gemmaTranscription,
+                                            text = gemmaTranscription,
                                             style = MaterialTheme.typography.bodyMedium,
                                             modifier = Modifier.padding(12.dp)
                                         )
                                     }
                                 }
 
-                                if (uiState.gemmaResponse.isNotEmpty()) {
+                                if (gemmaResponse.isNotEmpty()) {
                                     Spacer(modifier = Modifier.height(8.dp))
                                     Text(
                                         text = "Response:",
@@ -478,7 +700,7 @@ fun AudioScreen(
                                     )
                                     Spacer(modifier = Modifier.height(4.dp))
                                     Text(
-                                        text = uiState.gemmaResponse,
+                                        text = gemmaResponse,
                                         style = MaterialTheme.typography.bodyMedium
                                     )
                                 }
@@ -490,9 +712,9 @@ fun AudioScreen(
                 }
 
                 // Recordings List
-                if (uiState.recordings.isNotEmpty()) {
+                if (recordings.isNotEmpty()) {
                     Text(
-                        text = "Recordings (${uiState.recordings.size})",
+                        text = "Recordings (${recordings.size})",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.align(Alignment.Start)
@@ -505,11 +727,11 @@ fun AudioScreen(
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        uiState.recordings.forEach { recording ->
+                        recordings.forEach { recording ->
                             Card(
                                 modifier = Modifier.fillMaxWidth(),
                                 colors = CardDefaults.cardColors(
-                                    containerColor = if (uiState.currentlyPlaying == recording)
+                                    containerColor = if (currentlyPlaying == recording)
                                         MaterialTheme.colorScheme.tertiaryContainer
                                     else
                                         MaterialTheme.colorScheme.surfaceVariant
@@ -537,13 +759,13 @@ fun AudioScreen(
                                         Row {
                                             // Transcribe with Gemma button
                                             IconButton(
-                                                onClick = { viewModel.transcribeWithGemma(recording) },
-                                                enabled = viewModel.isGemmaReady() && !uiState.isProcessingWithGemma
+                                                onClick = { transcribeWithGemma(recording) },
+                                                enabled = audioGemmaHelper.isReady() && !isProcessingWithGemma
                                             ) {
                                                 Icon(
                                                     imageVector = Icons.Default.AutoAwesome,
                                                     contentDescription = "Transcribe with Gemma",
-                                                    tint = if (viewModel.isGemmaReady())
+                                                    tint = if (audioGemmaHelper.isReady())
                                                         MaterialTheme.colorScheme.primary
                                                     else
                                                         MaterialTheme.colorScheme.onSurfaceVariant
@@ -552,19 +774,19 @@ fun AudioScreen(
 
                                             IconButton(
                                                 onClick = {
-                                                    if (uiState.currentlyPlaying == recording && uiState.isPlaying) {
-                                                        viewModel.stopPlayback()
+                                                    if (currentlyPlaying == recording && isPlaying) {
+                                                        stopPlayback()
                                                     } else {
-                                                        viewModel.playRecording(recording)
+                                                        playRecording(recording)
                                                     }
                                                 }
                                             ) {
                                                 Icon(
-                                                    imageVector = if (uiState.currentlyPlaying == recording && uiState.isPlaying)
+                                                    imageVector = if (currentlyPlaying == recording && isPlaying)
                                                         Icons.Default.Pause
                                                     else
                                                         Icons.Default.PlayArrow,
-                                                    contentDescription = if (uiState.currentlyPlaying == recording && uiState.isPlaying)
+                                                    contentDescription = if (currentlyPlaying == recording && isPlaying)
                                                         "Pause"
                                                     else
                                                         "Play"
@@ -572,7 +794,7 @@ fun AudioScreen(
                                             }
 
                                             IconButton(
-                                                onClick = { viewModel.deleteRecording(recording) }
+                                                onClick = { deleteRecording(recording) }
                                             ) {
                                                 Icon(
                                                     imageVector = Icons.Default.Delete,
@@ -583,10 +805,11 @@ fun AudioScreen(
                                         }
                                     }
 
-                                    if (uiState.currentlyPlaying == recording) {
+                                    // The active playback item gets a progress bar for quick status feedback.
+                                    if (currentlyPlaying == recording) {
                                         Spacer(modifier = Modifier.height(8.dp))
                                         LinearProgressIndicator(
-                                            progress = { uiState.playbackProgress },
+                                            progress = { playbackProgress },
                                             modifier = Modifier.fillMaxWidth(),
                                         )
                                     }
@@ -594,7 +817,7 @@ fun AudioScreen(
                             }
                         }
                     }
-                } else if (uiState.hasAudioPermission) {
+                } else if (hasAudioPermission) {
                     Spacer(modifier = Modifier.weight(1f))
                     Text(
                         text = "No recordings yet.\nTap the microphone button to start.",
@@ -609,32 +832,32 @@ fun AudioScreen(
 
             FloatingActionButton(
                 onClick = {
-                    if (!uiState.hasAudioPermission) return@FloatingActionButton
-                    if (uiState.isRecording) {
-                        viewModel.stopRecording()
+                    if (!hasAudioPermission) return@FloatingActionButton
+                    if (isRecording) {
+                        stopRecording()
                     } else {
-                        viewModel.startRecording()
+                        startRecording()
                     }
                 },
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
                     .padding(end = 16.dp, bottom = 16.dp)
-                    .alpha(if (uiState.hasAudioPermission) 1f else 0.5f),
+                    .alpha(if (hasAudioPermission) 1f else 0.5f),
                 containerColor = when {
-                    !uiState.hasAudioPermission -> MaterialTheme.colorScheme.surfaceVariant
-                    uiState.isRecording -> MaterialTheme.colorScheme.error
+                    !hasAudioPermission -> MaterialTheme.colorScheme.surfaceVariant
+                    isRecording -> MaterialTheme.colorScheme.error
                     else -> MaterialTheme.colorScheme.primary
                 }
             ) {
                 Icon(
                     imageVector = when {
-                        !uiState.hasAudioPermission -> Icons.Default.MicOff
-                        uiState.isRecording -> Icons.Default.Stop
+                        !hasAudioPermission -> Icons.Default.MicOff
+                        isRecording -> Icons.Default.Stop
                         else -> Icons.Default.Mic
                     },
                     contentDescription = when {
-                        !uiState.hasAudioPermission -> "Microphone Permission Required"
-                        uiState.isRecording -> "Stop Recording"
+                        !hasAudioPermission -> "Microphone Permission Required"
+                        isRecording -> "Stop Recording"
                         else -> "Start Recording"
                     }
                 )

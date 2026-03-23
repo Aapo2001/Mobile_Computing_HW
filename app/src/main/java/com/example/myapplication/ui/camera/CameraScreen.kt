@@ -1,12 +1,14 @@
 package com.example.myapplication.ui.camera
 
 import android.Manifest
+import android.content.pm.PackageManager
 import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageCapture
+import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
@@ -51,8 +53,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -68,7 +70,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.rememberAsyncImagePainter
 import com.example.myapplication.helper.FaceDetectorHelper
 import com.example.myapplication.navigation.BottomNavBar
@@ -77,8 +78,18 @@ import com.example.myapplication.navigation.NavBar
 import com.google.mediapipe.tasks.vision.facedetector.FaceDetectorResult
 import androidx.navigation.NavController
 import androidx.navigation.NavDestination
+import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Locale
 import java.util.concurrent.Executors
 
+/**
+ * Camera feature screen.
+ *
+ * This screen combines CameraX preview, still capture, and image analysis in a single composable.
+ * Analysis frames are forwarded to [FaceDetectorHelper] so the preview can show a real-time face
+ * overlay while still allowing photo capture.
+ */
 @Composable
 fun CameraScreen(
     modifier: Modifier = Modifier,
@@ -87,14 +98,35 @@ fun CameraScreen(
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
+    val mainExecutor = remember(context) { ContextCompat.getMainExecutor(context) }
 
-    val viewModel: CameraViewModel = viewModel(
-        factory = CameraViewModel.provideFactory(context)
-    )
+    // Compose-local state mirrors the active camera session and the gallery of captured photos.
+    var hasCameraPermission by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+        )
+    }
+    var lensFacing by remember { mutableIntStateOf(CameraSelector.LENS_FACING_BACK) }
+    var capturedPhotos by remember { mutableStateOf<List<File>>(emptyList()) }
+    var selectedPhoto by remember { mutableStateOf<File?>(null) }
+    var faceDetectorResult by remember { mutableStateOf<FaceDetectorResult?>(null) }
+    var detectedImageWidth by remember { mutableIntStateOf(0) }
+    var detectedImageHeight by remember { mutableIntStateOf(0) }
+    var faceCount by remember { mutableIntStateOf(0) }
 
-    val uiState by viewModel.uiState.collectAsState()
+    val photosDir = remember { File(context.filesDir, "photos").apply { mkdirs() } }
+    var imageCapture by remember { mutableStateOf<ImageCapture?>(null) }
 
     var previewView by remember { mutableStateOf<PreviewView?>(null) }
+
+    // Load existing photos
+    LaunchedEffect(Unit) {
+        val photos = photosDir.listFiles()
+            ?.filter { it.extension == "jpg" }
+            ?.sortedByDescending { it.lastModified() }
+            ?: emptyList()
+        capturedPhotos = photos
+    }
 
     // Face detector
     val faceDetectorHelper = remember {
@@ -106,11 +138,18 @@ fun CameraScreen(
                     imageWidth: Int,
                     imageHeight: Int
                 ) {
-                    viewModel.updateFaceDetectionResult(result, imageWidth, imageHeight)
+                    mainExecutor.execute {
+                        faceDetectorResult = result
+                        detectedImageWidth = imageWidth
+                        detectedImageHeight = imageHeight
+                        faceCount = result.detections().size
+                    }
                 }
 
                 override fun onError(error: String) {
-                    Log.e("CameraScreen", "Face detection error: $error")
+                    mainExecutor.execute {
+                        Log.e("CameraScreen", "Face detection error: $error")
+                    }
                 }
             }
         )
@@ -123,56 +162,59 @@ fun CameraScreen(
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { isGranted ->
-        viewModel.onPermissionResult(isGranted)
+        hasCameraPermission = isGranted
     }
 
+    val isFrontCamera = { lensFacing == CameraSelector.LENS_FACING_FRONT }
+
     // Setup camera when permission is granted
-    LaunchedEffect(uiState.hasCameraPermission, uiState.lensFacing) {
-        if (uiState.hasCameraPermission && previewView != null) {
-            val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
-            cameraProviderFuture.addListener({
-                val cameraProvider = cameraProviderFuture.get()
+    LaunchedEffect(hasCameraPermission, lensFacing, previewView) {
+        if (!hasCameraPermission) return@LaunchedEffect
 
-                val preview = Preview.Builder().build().also {
-                    it.setSurfaceProvider(previewView!!.surfaceProvider)
-                }
+        val currentPreviewView = previewView ?: return@LaunchedEffect
+        val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
+        cameraProviderFuture.addListener({
+            val cameraProvider = cameraProviderFuture.get()
 
-                val imageCapture = ImageCapture.Builder()
-                    .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
-                    .build()
+            val preview = Preview.Builder().build().also {
+                it.setSurfaceProvider(currentPreviewView.surfaceProvider)
+            }
 
-                viewModel.imageCapture = imageCapture
+            val newImageCapture = ImageCapture.Builder()
+                .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
+                .build()
 
-                // Image analysis for face detection
-                val imageAnalysis = ImageAnalysis.Builder()
-                    .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                    .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
-                    .build()
-                    .also { analysis ->
-                        analysis.setAnalyzer(cameraExecutor) { imageProxy ->
-                            faceDetectorHelper.detectLiveStream(imageProxy, viewModel.isFrontCamera())
-                            imageProxy.close()
-                        }
+            imageCapture = newImageCapture
+
+            // Run face detection continuously alongside preview/capture without queueing old frames.
+            val imageAnalysis = ImageAnalysis.Builder()
+                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
+                .build()
+                .also { analysis ->
+                    analysis.setAnalyzer(cameraExecutor) { imageProxy ->
+                        faceDetectorHelper.detectLiveStream(imageProxy, isFrontCamera())
+                        imageProxy.close()
                     }
-
-                val cameraSelector = CameraSelector.Builder()
-                    .requireLensFacing(uiState.lensFacing)
-                    .build()
-
-                try {
-                    cameraProvider.unbindAll()
-                    cameraProvider.bindToLifecycle(
-                        lifecycleOwner,
-                        cameraSelector,
-                        preview,
-                        imageCapture,
-                        imageAnalysis
-                    )
-                } catch (e: Exception) {
-                    Log.e("CameraScreen", "Camera binding failed", e)
                 }
-            }, ContextCompat.getMainExecutor(context))
-        }
+
+            val cameraSelector = CameraSelector.Builder()
+                .requireLensFacing(lensFacing)
+                .build()
+
+            try {
+                cameraProvider.unbindAll()
+                cameraProvider.bindToLifecycle(
+                    lifecycleOwner,
+                    cameraSelector,
+                    preview,
+                    newImageCapture,
+                    imageAnalysis
+                )
+            } catch (e: Exception) {
+                Log.e("CameraScreen", "Camera binding failed", e)
+            }
+        }, mainExecutor)
     }
 
     // Cleanup
@@ -180,6 +222,46 @@ fun CameraScreen(
         onDispose {
             cameraExecutor.shutdown()
             faceDetectorHelper.close()
+        }
+    }
+
+    val takePhoto = {
+        val capture = imageCapture
+        if (capture != null) {
+            // Each capture is stored in app-private storage with a timestamped filename.
+            val photoFile = File(
+                photosDir,
+                SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(System.currentTimeMillis()) + ".jpg"
+            )
+            val outputOptions = ImageCapture.OutputFileOptions.Builder(photoFile).build()
+            capture.takePicture(
+                outputOptions,
+                cameraExecutor,
+                object : ImageCapture.OnImageSavedCallback {
+                    override fun onImageSaved(output: ImageCapture.OutputFileResults) {
+                        capturedPhotos = listOf(photoFile) + capturedPhotos
+                    }
+
+                    override fun onError(exception: ImageCaptureException) {
+                        Log.e("CameraScreen", "Photo capture failed", exception)
+                    }
+                }
+            )
+        }
+    }
+
+    val switchCamera = {
+        lensFacing = if (lensFacing == CameraSelector.LENS_FACING_BACK)
+            CameraSelector.LENS_FACING_FRONT
+        else
+            CameraSelector.LENS_FACING_BACK
+    }
+
+    val deleteSelectedPhoto = {
+        selectedPhoto?.let { photo ->
+            photo.delete()
+            capturedPhotos = capturedPhotos - photo
+            selectedPhoto = null
         }
     }
 
@@ -203,7 +285,7 @@ fun CameraScreen(
                 .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            if (!uiState.hasCameraPermission) {
+            if (!hasCameraPermission) {
                 // Permission Card
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -254,21 +336,23 @@ fun CameraScreen(
                     ) {
                         AndroidView(
                             factory = { ctx ->
-                                PreviewView(ctx).also { previewView = it }
+                                PreviewView(ctx).apply {
+                                    implementationMode = PreviewView.ImplementationMode.COMPATIBLE
+                                }.also { previewView = it }
                             },
                             modifier = Modifier.fillMaxSize()
                         )
 
-                        // Face detection overlay
+                        // Draw MediaPipe face boxes and keypoints on top of the PreviewView.
                         FaceOverlay(
-                            faceDetectorResult = uiState.faceDetectorResult,
-                            imageWidth = uiState.detectedImageWidth,
-                            imageHeight = uiState.detectedImageHeight,
+                            faceDetectorResult = faceDetectorResult,
+                            imageWidth = detectedImageWidth,
+                            imageHeight = detectedImageHeight,
                             modifier = Modifier.fillMaxSize()
                         )
 
                         // Face count indicator
-                        if (uiState.faceCount > 0) {
+                        if (faceCount > 0) {
                             Box(
                                 modifier = Modifier
                                     .align(Alignment.TopStart)
@@ -280,7 +364,7 @@ fun CameraScreen(
                                     .padding(horizontal = 8.dp, vertical = 4.dp)
                             ) {
                                 Text(
-                                    text = "Faces: ${uiState.faceCount}",
+                                    text = "Faces: $faceCount",
                                     color = Color.White,
                                     style = MaterialTheme.typography.labelMedium
                                 )
@@ -302,7 +386,7 @@ fun CameraScreen(
                             ) {
                                 // Switch camera button
                                 IconButton(
-                                    onClick = { viewModel.switchCamera() },
+                                    onClick = { switchCamera() },
                                     modifier = Modifier
                                         .size(48.dp)
                                         .background(
@@ -319,7 +403,7 @@ fun CameraScreen(
 
                                 // Capture button - M3 Large FAB
                                 FloatingActionButton(
-                                    onClick = { viewModel.takePhoto(cameraExecutor) },
+                                    onClick = { takePhoto() },
                                     modifier = Modifier.size(72.dp),
                                     containerColor = MaterialTheme.colorScheme.primary
                                 ) {
@@ -339,7 +423,7 @@ fun CameraScreen(
             }
 
             // Captured Photos Section
-            if (uiState.capturedPhotos.isNotEmpty()) {
+            if (capturedPhotos.isNotEmpty()) {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(
@@ -353,7 +437,7 @@ fun CameraScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = "Captured Photos (${uiState.capturedPhotos.size})",
+                                text = "Captured Photos (${capturedPhotos.size})",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold
                             )
@@ -365,17 +449,17 @@ fun CameraScreen(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             contentPadding = PaddingValues(horizontal = 4.dp)
                         ) {
-                            items(uiState.capturedPhotos) { photo ->
+                            items(capturedPhotos) { photo ->
                                 Box(
                                     modifier = Modifier
                                         .size(100.dp)
                                         .clip(RoundedCornerShape(8.dp))
                                         .border(
-                                            width = if (uiState.selectedPhoto == photo) 3.dp else 0.dp,
-                                            color = if (uiState.selectedPhoto == photo) MaterialTheme.colorScheme.primary else Color.Transparent,
+                                            width = if (selectedPhoto == photo) 3.dp else 0.dp,
+                                            color = if (selectedPhoto == photo) MaterialTheme.colorScheme.primary else Color.Transparent,
                                             shape = RoundedCornerShape(8.dp)
                                         )
-                                        .clickable { viewModel.selectPhoto(photo) }
+                                        .clickable { selectedPhoto = photo }
                                 ) {
                                     Image(
                                         painter = rememberAsyncImagePainter(photo),
@@ -391,7 +475,7 @@ fun CameraScreen(
             }
 
             // Selected Photo Preview
-            uiState.selectedPhoto?.let { photo ->
+            selectedPhoto?.let { photo ->
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(
@@ -423,7 +507,7 @@ fun CameraScreen(
                         Spacer(modifier = Modifier.height(8.dp))
 
                         Button(
-                            onClick = { viewModel.deleteSelectedPhoto() },
+                            onClick = { deleteSelectedPhoto() },
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = MaterialTheme.colorScheme.error,
                                 contentColor = MaterialTheme.colorScheme.onError

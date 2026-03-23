@@ -18,6 +18,13 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 
+/**
+ * Application theme entry point.
+ *
+ * The theme prefers dynamic Material You colors on Android 12+ and otherwise falls back to the
+ * static color palette defined in [Color.kt]. It also applies the shared shape system and adjusts
+ * status bar appearance for edge-to-edge rendering.
+ */
 // Material 3 Color Scheme - Light Theme
 private val LightColorScheme = lightColorScheme(
     primary = md_theme_light_primary,
@@ -84,7 +91,7 @@ private val DarkColorScheme = darkColorScheme(
     scrim = md_theme_dark_scrim
 )
 
-// Material 3 Shape System
+/** Shared Material 3 shape scale used across cards, buttons, and text fields. */
 val Shapes = Shapes(
     extraSmall = RoundedCornerShape(4.dp),
     small = RoundedCornerShape(8.dp),

@@ -10,6 +10,17 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 
+/**
+ * Helper for the audio-oriented Gemma model integration.
+ *
+ * In the current project this class is used for two related workflows:
+ *
+ * - transcribing or processing a saved audio file
+ * - running text-only follow-up prompts over existing transcription text
+ *
+ * The implementation is intentionally thin and mostly exposes the MediaPipe model through a
+ * coursework-friendly API.
+ */
 class AudioGemmaHelper(private val context: Context) {
     private var llmInference: LlmInference? = null
     private var isInitialized = false
@@ -23,6 +34,12 @@ class AudioGemmaHelper(private val context: Context) {
         private const val AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT
     }
 
+    /**
+     * Initializes the Gemma-3n model used by the audio screen.
+     *
+     * Note that the current code points at a fixed filesystem path rather than copying the model
+     * from assets, so deployment still depends on external setup.
+     */
     suspend fun initialize(): Boolean = withContext(Dispatchers.IO) {
         if (isInitialized) return@withContext true
 
@@ -44,6 +61,12 @@ class AudioGemmaHelper(private val context: Context) {
         }
     }
 
+    /**
+     * Copies the model from assets into internal storage.
+     *
+     * This utility currently exists for future flexibility, even though [initialize] uses a fixed
+     * model path instead.
+     */
     private fun copyModelFromAssets(destFile: File) {
         context.assets.open(MODEL_NAME).use { inputStream ->
             FileOutputStream(destFile).use { outputStream ->
@@ -52,6 +75,7 @@ class AudioGemmaHelper(private val context: Context) {
         }
     }
 
+    /** Sends an audio file to the model using a basic transcription prompt. */
     suspend fun transcribeAudioFile(audioFile: File): String = withContext(Dispatchers.IO) {
         if (!isInitialized) {
             return@withContext initError ?: "Model not initialized"
@@ -75,6 +99,7 @@ class AudioGemmaHelper(private val context: Context) {
         }
     }
 
+    /** Sends an audio file and a caller-provided instruction to the multimodal model. */
     suspend fun transcribeAndProcess(audioFile: File, instruction: String): String = withContext(Dispatchers.IO) {
         if (!isInitialized) {
             return@withContext initError ?: "Model not initialized"
@@ -94,6 +119,7 @@ class AudioGemmaHelper(private val context: Context) {
         }
     }
 
+    /** Runs a text-only prompt against the audio Gemma model. */
     suspend fun generateResponse(userMessage: String): String = withContext(Dispatchers.IO) {
         if (!isInitialized) {
             return@withContext initError ?: "Model not initialized"
@@ -108,18 +134,23 @@ class AudioGemmaHelper(private val context: Context) {
         }
     }
 
+    /** Formats a text-only turn-based prompt. */
     private fun formatPrompt(userMessage: String): String {
         return "<start_of_turn>user\n$userMessage<end_of_turn>\n<start_of_turn>model\n"
     }
 
+    /** Formats a prompt that signals the model to expect audio input as part of the request. */
     private fun formatAudioPrompt(instruction: String): String {
         return "<start_of_turn>user\n<audio>\n$instruction<end_of_turn>\n<start_of_turn>model\n"
     }
 
+    /** Returns `true` once the audio model has initialized successfully. */
     fun isReady(): Boolean = isInitialized
 
+    /** Returns the most recent initialization error, if one has been captured. */
     fun getError(): String? = initError
 
+    /** Releases the native model resources. */
     fun close() {
         llmInference?.close()
         llmInference = null
@@ -127,7 +158,10 @@ class AudioGemmaHelper(private val context: Context) {
     }
 }
 
-// Extension function for LlmInference to handle audio input
+/**
+ * Small compatibility wrapper used by the screen code so audio and text prompts share the same
+ * helper surface even though the current implementation ultimately delegates to `generateResponse`.
+ */
 private fun LlmInference.generateResponseWithAudio(
     prompt: String,
     @Suppress("UNUSED_PARAMETER") audioData: ByteArray

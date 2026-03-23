@@ -10,6 +10,14 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import java.util.Locale
 
+/**
+ * Wraps Android's [SpeechRecognizer] API behind simple Compose-friendly state flows.
+ *
+ * The helper exposes both:
+ *
+ * - the high-level recognition state via [transcriptionState]
+ * - whether the recognizer is actively listening via [isListening]
+ */
 class AudioTranscriptionHelper(private val context: Context) {
 
     private var speechRecognizer: SpeechRecognizer? = null
@@ -27,6 +35,7 @@ class AudioTranscriptionHelper(private val context: Context) {
         }
     }
 
+    /** Creates the recognizer instance and translates callbacks into [TranscriptionState] values. */
     private fun setupSpeechRecognizer() {
         speechRecognizer = SpeechRecognizer.createSpeechRecognizer(context).apply {
             setRecognitionListener(object : RecognitionListener {
@@ -86,6 +95,7 @@ class AudioTranscriptionHelper(private val context: Context) {
         }
     }
 
+    /** Starts a free-form speech recognition session using the device default locale. */
     fun startListening() {
         if (speechRecognizer == null) {
             _transcriptionState.value = TranscriptionState.Error("Speech recognizer not initialized")
@@ -103,20 +113,29 @@ class AudioTranscriptionHelper(private val context: Context) {
         speechRecognizer?.startListening(intent)
     }
 
+    /** Requests the current speech recognition session to stop. */
     fun stopListening() {
         speechRecognizer?.stopListening()
         _isListening.value = false
     }
 
+    /** Resets the exposed state back to idle without rebuilding the recognizer. */
     fun resetState() {
         _transcriptionState.value = TranscriptionState.Idle
     }
 
+    /** Destroys the recognizer and releases any system resources it holds. */
     fun close() {
         speechRecognizer?.destroy()
         speechRecognizer = null
     }
 
+    /**
+     * UI-facing state model for the speech recognition flow.
+     *
+     * The audio screen switches on this sealed class to decide whether it should show prompts,
+     * progress indicators, partial results, final results, or an error message.
+     */
     sealed class TranscriptionState {
         data object Idle : TranscriptionState()
         data object Starting : TranscriptionState()

@@ -2,6 +2,7 @@ package com.example.myapplication.ui.map
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -26,29 +27,42 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.core.content.ContextCompat
 import androidx.navigation.NavController
 import androidx.navigation.NavDestination
 import com.example.myapplication.navigation.BottomNavBar
 import com.example.myapplication.navigation.MapDest
 import com.example.myapplication.navigation.NavBar
+import com.google.android.gms.location.LocationServices
 import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
 import com.google.maps.android.compose.GoogleMap
+import com.google.maps.android.compose.MapProperties
+import com.google.maps.android.compose.MapType
 import com.google.maps.android.compose.MapUiSettings
 import com.google.maps.android.compose.Marker
 import com.google.maps.android.compose.MarkerState
 import com.google.maps.android.compose.rememberCameraPositionState
 
 @SuppressLint("MissingPermission")
+/**
+ * Map and location screen.
+ *
+ * It requests location permission when needed, reads the device's last known location, enables the
+ * map's location layer only after permission is granted, and lets the user drop temporary markers
+ * by tapping the map.
+ */
 @Composable
 fun MapScreen(
     modifier: Modifier = Modifier,
@@ -57,11 +71,34 @@ fun MapScreen(
 ) {
     val context = LocalContext.current
 
-    val viewModel: MapViewModel = viewModel(
-        factory = MapViewModel.provideFactory(context)
-    )
+    // Local state covers permissions, current location, in-memory markers, and map properties.
+    var hasLocationPermission by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        )
+    }
+    var currentLocation by remember { mutableStateOf<LatLng?>(null) }
+    var markers by remember { mutableStateOf<List<LatLng>>(emptyList()) }
+    var mapProperties by remember {
+        mutableStateOf(
+            MapProperties(isMyLocationEnabled = false, mapType = MapType.NORMAL)
+        )
+    }
 
-    val uiState by viewModel.uiState.collectAsState()
+    val fusedLocationClient = remember { LocationServices.getFusedLocationProviderClient(context) }
+
+    // Fetch location when permission is available
+    LaunchedEffect(hasLocationPermission) {
+        if (hasLocationPermission) {
+            // Toggle the built-in my-location layer only after runtime permission is granted.
+            mapProperties = mapProperties.copy(isMyLocationEnabled = true)
+            fusedLocationClient.lastLocation.addOnSuccessListener { location ->
+                location?.let {
+                    currentLocation = LatLng(it.latitude, it.longitude)
+                }
+            }
+        }
+    }
 
     // Default location (Helsinki, Finland)
     val defaultLocation = LatLng(60.1699, 24.9384)
@@ -83,7 +120,9 @@ fun MapScreen(
     ) { permissions ->
         val fineGranted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true
         val coarseGranted = permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
-        viewModel.onPermissionResult(fineGranted, coarseGranted)
+        val granted = fineGranted || coarseGranted
+        hasLocationPermission = granted
+        mapProperties = mapProperties.copy(isMyLocationEnabled = granted)
     }
 
     Scaffold(
@@ -100,7 +139,7 @@ fun MapScreen(
         floatingActionButton = {
             FloatingActionButton(
                 onClick = {
-                    uiState.currentLocation?.let { location ->
+                    currentLocation?.let { location ->
                         cameraPositionState.move(
                             CameraUpdateFactory.newLatLngZoom(location, 15f)
                         )
@@ -120,7 +159,7 @@ fun MapScreen(
                 .padding(paddingValues)
         ) {
             // Permission Card
-            if (!uiState.hasLocationPermission) {
+            if (!hasLocationPermission) {
                 Card(
                     modifier = Modifier
                         .fillMaxSize()
@@ -170,7 +209,7 @@ fun MapScreen(
             }
 
             // Location info card (context-aware)
-            if (uiState.hasLocationPermission && uiState.currentLocation != null) {
+            if (hasLocationPermission && currentLocation != null) {
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -185,7 +224,7 @@ fun MapScreen(
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold
                         )
-                        uiState.currentLocation?.let { loc ->
+                        currentLocation?.let { loc ->
                             Text(
                                 text = "Lat: %.4f, Lng: %.4f".format(loc.latitude, loc.longitude),
                                 style = MaterialTheme.typography.bodySmall
@@ -209,14 +248,15 @@ fun MapScreen(
                 GoogleMap(
                     modifier = Modifier.fillMaxSize(),
                     cameraPositionState = cameraPositionState,
-                    properties = uiState.mapProperties,
+                    properties = mapProperties,
                     uiSettings = mapUiSettings,
                     onMapClick = { latLng ->
-                        viewModel.addMarker(latLng)
+                        // Markers are session-local and exist only in Compose state for this screen.
+                        markers = markers + latLng
                     }
                 ) {
                     // User-added markers
-                    uiState.markers.forEachIndexed { index, position ->
+                    markers.forEachIndexed { index, position ->
                         Marker(
                             state = MarkerState(position = position),
                             title = "Marker ${index + 1}",
@@ -225,7 +265,7 @@ fun MapScreen(
                     }
 
                     // Current location marker (if available)
-                    uiState.currentLocation?.let { location ->
+                    currentLocation?.let { location ->
                         Marker(
                             state = MarkerState(position = location),
                             title = "You are here",

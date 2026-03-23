@@ -1,10 +1,16 @@
 import com.example.myapplication.ui.home.Message
 
 /**
- * SampleData for Jetpack Compose Tutorial 
+ * Static sample data used by previews and as a conversation fallback when the database is empty.
+ *
+ * The content is adapted from the standard Compose conversation sample and gives the chat screen
+ * something readable to render before the user has saved any real messages.
  */
 object SampleData {
-    // Sample conversation data
+    /**
+     * Demo messages rendered by [com.example.myapplication.ui.home.Conversation] when no persisted
+     * chat history exists yet.
+     */
     val conversationSample = listOf(
         Message(
             "Lexi",

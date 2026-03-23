@@ -22,23 +22,41 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import androidx.navigation.NavDestination
+import com.example.myapplication.helper.GemmaHelper
 import com.example.myapplication.navigation.BottomNavBar
 import com.example.myapplication.navigation.Home
 import com.example.myapplication.navigation.NavBar
 import com.example.myapplication.navigation.Profile
 import com.example.myapplication.repository.MessageRepository
 import com.example.myapplication.repository.UserProfileRepository
+import kotlinx.coroutines.launch
 
+/**
+ * Chat screen for the application.
+ *
+ * The screen combines:
+ *
+ * - persisted message history from [messageRepository]
+ * - the currently saved user profile from [userProfileRepository]
+ * - transient Compose state for the input field and Gemma status
+ *
+ * If no messages have been saved yet, [SampleData.conversationSample] is shown as a fallback.
+ */
 @Composable
 fun HomeScreen(
     onclick: () -> Unit,
@@ -48,20 +66,63 @@ fun HomeScreen(
     currentDestination: NavDestination?
 ) {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
 
-    val viewModel: HomeViewModel = viewModel(
-        factory = HomeViewModel.provideFactory(
-            messageRepository = messageRepository,
-            userProfileRepository = userProfileRepository,
-            context = context
+    // Compose-local state for the text box and the AI generation status line.
+    var newMessageText by remember { mutableStateOf("") }
+    var isGenerating by remember { mutableStateOf(false) }
+    var gemmaStatus by remember { mutableStateOf("Initializing Gemma...") }
+
+    val gemmaHelper = remember { GemmaHelper(context) }
+
+    // Initialize Gemma
+    LaunchedEffect(Unit) {
+        val success = gemmaHelper.initialize()
+        gemmaStatus = if (success) "Gemma ready" else (gemmaHelper.getError() ?: "Failed to initialize")
+    }
+
+    // Cleanup Gemma on dispose
+    DisposableEffect(Unit) {
+        onDispose {
+            gemmaHelper.close()
+        }
+    }
+
+    // Collect repository flows
+    val dbMessages by messageRepository.getAllMessages().collectAsState(initial = emptyList())
+    val userProfile by userProfileRepository.userProfile.collectAsState(initial = null)
+
+    val username = userProfile?.username ?: "You"
+    val userImagePath = userProfile?.imagePath
+
+    // Map persisted database rows into the smaller UI model used by the conversation list.
+    val uiMessages = dbMessages.map {
+        Message(
+            author = it.author,
+            body = it.body,
+            imagePath = if (it.author == username || it.author == "You") userImagePath else null
         )
-    )
+    }
 
-    val uiState by viewModel.uiState.collectAsState()
+    val displayMessages = uiMessages.ifEmpty { SampleData.conversationSample }
 
-    // Convert to display messages with sample data fallback
-    val displayMessages = uiState.messages.ifEmpty { SampleData.conversationSample }
-    val userImagePath = uiState.userProfile?.imagePath
+    // Insert the user's message first, then request and persist a Gemma response if available.
+    val sendMessage = {
+        val messageText = newMessageText
+        if (messageText.isNotBlank() && !isGenerating) {
+            newMessageText = ""
+            coroutineScope.launch {
+                messageRepository.insertMessage(username, messageText)
+
+                if (gemmaHelper.isReady()) {
+                    isGenerating = true
+                    val response = gemmaHelper.generateResponse(messageText)
+                    messageRepository.insertMessage("Gemma", response)
+                    isGenerating = false
+                }
+            }
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -90,7 +151,7 @@ fun HomeScreen(
             Spacer(modifier = Modifier.height(8.dp))
             // Gemma status indicator
             Text(
-                text = if (uiState.isGenerating) "Generating response..." else uiState.gemmaStatus,
+                text = if (isGenerating) "Generating response..." else gemmaStatus,
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier
@@ -111,8 +172,8 @@ fun HomeScreen(
                     verticalAlignment = Alignment.Bottom
                 ) {
                     OutlinedTextField(
-                        value = uiState.newMessageText,
-                        onValueChange = { viewModel.updateNewMessageText(it) },
+                        value = newMessageText,
+                        onValueChange = { newMessageText = it },
                         modifier = Modifier.weight(1f).padding(vertical = 4.dp),
                         placeholder = { Text("Type a message...") },
                         singleLine = true,
@@ -124,13 +185,13 @@ fun HomeScreen(
                             unfocusedBorderColor = MaterialTheme.colorScheme.outline
                         ),
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                        keyboardActions = KeyboardActions(onSend = { viewModel.sendMessage() }),
+                        keyboardActions = KeyboardActions(onSend = { sendMessage() }),
                         trailingIcon = {
                             IconButton(
-                                onClick = { viewModel.sendMessage() },
-                                enabled = !uiState.isGenerating
+                                onClick = { sendMessage() },
+                                enabled = !isGenerating
                             ) {
-                                if (uiState.isGenerating) {
+                                if (isGenerating) {
                                     CircularProgressIndicator(
                                         modifier = Modifier.size(24.dp),
                                         strokeWidth = 2.dp,

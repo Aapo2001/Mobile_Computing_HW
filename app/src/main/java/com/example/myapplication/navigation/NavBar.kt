@@ -15,6 +15,12 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
+/**
+ * Shared top app bar used across screens.
+ *
+ * Screens may optionally provide a leading icon action, which is commonly used for back
+ * navigation or opening the profile screen from chat.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NavBar(

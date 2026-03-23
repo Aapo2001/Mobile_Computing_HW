@@ -13,6 +13,13 @@ import androidx.annotation.RequiresApi
 import com.example.myapplication.notification.NotificationHelper
 import kotlin.math.sqrt
 
+/**
+ * Foreground service that listens to accelerometer updates and turns large acceleration spikes
+ * into a simple shake counter.
+ *
+ * The UI can bind to the service through [LocalBinder] to receive live sensor values and the
+ * current shake count while the service keeps running in the background.
+ */
 class SensorService : Service(), SensorEventListener {
 
     private lateinit var sensorManager: SensorManager
@@ -22,19 +29,24 @@ class SensorService : Service(), SensorEventListener {
     private val binder = LocalBinder()
     private var isSensorRegistered = false
 
-    // Shake detection variables
+    // Shake detection state used to debounce rapid sensor updates into human-scale "shakes".
     private var lastShakeTime: Long = 0
     private var shakeCount: Int = 0
     private val shakeThreshold = 12.0f  // Acceleration threshold for shake detection
     private val shakeTimeWindow = 500L  // Time window between shakes (ms)
 
-    // Callback for UI updates
+    // Bound screen callback for propagating live values back to Compose state.
     var onSensorDataChanged: ((Float, Float, Float, Int) -> Unit)? = null
 
+    /**
+     * Binder exposed to the UI so it can obtain the running service instance and subscribe to
+     * sensor updates without using a separate IPC layer.
+     */
     inner class LocalBinder : Binder() {
         fun getService(): SensorService = this@SensorService
     }
 
+    /** Initializes the notification helper and resolves the accelerometer sensor. */
     override fun onCreate() {
         super.onCreate()
         notificationHelper = NotificationHelper(this)
@@ -42,6 +54,7 @@ class SensorService : Service(), SensorEventListener {
         accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
     }
 
+    /** Registers the accelerometer listener only once. */
     private fun registerSensorListener() {
         if (!isSensorRegistered) {
             accelerometer?.let {
@@ -51,6 +64,7 @@ class SensorService : Service(), SensorEventListener {
         }
     }
 
+    /** Promotes the service to the foreground and starts sensor monitoring. */
     @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         // Start as foreground service
@@ -67,12 +81,17 @@ class SensorService : Service(), SensorEventListener {
         return START_STICKY
     }
 
+    /** Returns the local binder and guarantees sensor registration for bound clients. */
     override fun onBind(intent: Intent?): IBinder {
         // Also register sensor when binding (in case onStartCommand was called first)
         registerSensorListener()
         return binder
     }
 
+    /**
+     * Receives accelerometer frames, computes an approximate net acceleration magnitude, updates
+     * the shake counter, and emits current values back to the bound UI.
+     */
     override fun onSensorChanged(event: SensorEvent?) {
         event?.let {
             if (it.sensor.type == Sensor.TYPE_ACCELEROMETER) {
@@ -107,12 +126,15 @@ class SensorService : Service(), SensorEventListener {
         // Not used
     }
 
+    /** Resets the service-owned shake count so the UI and notifications start from zero again. */
     fun resetShakeCount() {
         shakeCount = 0
     }
 
+    /** Returns the current shake count maintained by the service. */
     fun getShakeCount(): Int = shakeCount
 
+    /** Unregisters the sensor listener when the service is destroyed. */
     override fun onDestroy() {
         super.onDestroy()
         if (isSensorRegistered) {

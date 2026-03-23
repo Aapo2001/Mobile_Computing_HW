@@ -20,8 +20,23 @@ import com.example.myapplication.repository.UserProfileRepository
 import com.example.myapplication.ui.home.Conversation
 import com.example.myapplication.ui.theme.MyApplicationTheme
 
-
+/**
+ * Single-activity entry point for the application.
+ *
+ * The activity is intentionally lightweight:
+ *
+ * - installs the splash screen
+ * - reads notification deep-link extras
+ * - creates the top-level Compose content
+ * - hands repository creation and initial navigation state to [MyApp]
+ *
+ * All feature-specific behavior is delegated to composable screens and helper classes.
+ */
 class MainActivity : ComponentActivity() {
+    /**
+     * Reads any deep-link extras from a sensor notification and forwards the resolved
+     * start destination into the Compose navigation graph.
+     */
     override fun onCreate(savedInstanceState: Bundle?) {
         // Install splash screen before super.onCreate()
         val splashScreen = installSplashScreen()
@@ -48,7 +63,17 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-
+/**
+ * Root composable for the app shell.
+ *
+ * This function applies the app theme, creates the shared navigation controller, constructs the
+ * repositories that are passed into screens, and hosts the navigation graph.
+ *
+ * @param startRoute initial route shown by the navigation graph. This defaults to the chat screen
+ * but can be overridden when the app is opened from a notification.
+ * @param initialShakeCount optional shake count injected from the notification flow so the sensor
+ * screen can restore the last count immediately.
+ */
 @Composable
 fun MyApp(
     startRoute: String = Home.route,
@@ -70,6 +95,9 @@ fun MyApp(
     }
 }
 
+/**
+ * Preview used for validating the conversation UI in isolation from runtime dependencies.
+ */
 @Preview(name = "Light Mode")
 @Preview(
     uiMode = Configuration.UI_MODE_NIGHT_YES,
